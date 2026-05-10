@@ -24,6 +24,31 @@ if verdict.blocked:
     # → "'reqeusts' is 2 edit(s) from 'requests' (likely typosquat)"
 ```
 
+## Protect your OpenAI agent in 5 lines
+
+```python
+import cordon
+from cordon.integrations.openai import ActionBuilder, check_response
+
+builder = ActionBuilder()
+
+@builder.tool("run_shell")
+def _(args): return cordon.Action(kind="shell", command=args["command"],
+                                  changes=args.get("changes", {}))
+
+response = client.chat.completions.create(model="gpt-4o", messages=..., tools=...)
+
+for tcv in check_response(response, builder=builder, guard=cordon.Guard.strict()):
+    if tcv.blocked:
+        send_refusal(tcv.tool_call_id, tcv.verdict.top_reason())
+    else:
+        dispatch_tool(tcv.tool_name, tcv.arguments)
+```
+
+No `openai` package dependency required — Cordon duck-types the response, so it works with the official SDK, with `litellm`, with raw HTTP, and with any internal proxy.
+
+See [`examples/openai_protect.py`](examples/openai_protect.py) for a runnable end-to-end demo (no API key needed).
+
 ## Why Cordon exists
 
 LLM agents now write code, install packages, read secrets, and call APIs on behalf of users and companies. Current safety layers fall into two camps, and both have blind spots:

@@ -5,6 +5,28 @@ All notable changes to Cordon will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`cordon.integrations.openai`** — first framework integration. Three entry points:
+  - `ActionBuilder` — registry mapping tool names to `Action` constructors,
+    with decorator and imperative APIs.
+  - `check_response(response, builder, guard)` — inspect an OpenAI
+    `ChatCompletion`-shaped response and return a list of
+    `ToolCallVerdict` records, one per tool call.
+  - `protect_tool(name, builder, guard)` — decorator that guards a
+    Python function implementing one of your tools, raising
+    `BlockedAction` on block.
+  - Duck-typed against the OpenAI 1.x response shape; works with the
+    official SDK, `litellm`, and dict-shaped wrappers. No runtime
+    dependency on the `openai` package.
+  - Configurable `unknown_tool_policy` (`allow` / `flag` / `block`)
+    for tools without registered builders.
+- **22 new tests** for the OpenAI integration.
+- **`examples/openai_protect.py`** — runnable end-to-end demo (no API
+  key needed) showing benign vs typosquat-injected tool calls.
+
 ## [0.1.0] — 2026-05-10
 
 Initial public release.
