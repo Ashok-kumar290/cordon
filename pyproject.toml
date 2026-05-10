@@ -1,0 +1,81 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cordon"
+version = "0.1.0"
+description = "The pre-execution control layer for AI agents. Block dangerous actions before they happen."
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Ashok Kumar Adharapurapu", email = "avsmashokkumar@gmail.com" },
+]
+keywords = [
+    "ai-safety",
+    "ai-control",
+    "llm-security",
+    "agent-monitoring",
+    "interpretability",
+    "prompt-injection",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "pydantic>=2.0",
+    "typer>=0.12",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.3",
+    "mypy>=1.8",
+]
+benchmarks = [
+    "numpy>=1.24",
+    "pandas>=2.0",
+]
+
+[project.scripts]
+cordon = "cordon.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/Ashok-kumar290/cordon"
+Documentation = "https://github.com/Ashok-kumar290/cordon#readme"
+Repository = "https://github.com/Ashok-kumar290/cordon"
+Issues = "https://github.com/Ashok-kumar290/cordon/issues"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+cordon = ["probes/semantic/data/*.txt", "py.typed"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+addopts = "-ra --strict-markers"
