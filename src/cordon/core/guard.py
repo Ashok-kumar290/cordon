@@ -90,13 +90,31 @@ class Guard:
 
     # ─── Constructors for common profiles ─────────────────────────────────────
 
+    @staticmethod
+    def _semantic_suite() -> list[Probe]:
+        """The full 6-probe Semantic Guard suite (v0.2)."""
+        from cordon.probes.semantic import (
+            ExfiltrationProbe,
+            SecretLeakProbe,
+            SecurityWeakeningProbe,
+            SilentFailureProbe,
+            TestSuppressionProbe,
+            TyposquatProbe,
+        )
+        return [
+            TyposquatProbe(),
+            SecretLeakProbe(),
+            ExfiltrationProbe(),
+            SilentFailureProbe(),
+            TestSuppressionProbe(),
+            SecurityWeakeningProbe(),
+        ]
+
     @classmethod
     def strict(cls) -> Guard:
         """All semantic probes, tight thresholds. Blocks on weaker signals."""
-        from cordon.probes.semantic import SecretLeakProbe, TyposquatProbe
-
         return cls(
-            probes=[TyposquatProbe(), SecretLeakProbe()],
+            probes=cls._semantic_suite(),
             block_threshold=0.6,
             flag_threshold=0.2,
             name="strict",
@@ -105,10 +123,8 @@ class Guard:
     @classmethod
     def default(cls) -> Guard:
         """All semantic probes, balanced thresholds. Recommended for most apps."""
-        from cordon.probes.semantic import SecretLeakProbe, TyposquatProbe
-
         return cls(
-            probes=[TyposquatProbe(), SecretLeakProbe()],
+            probes=cls._semantic_suite(),
             block_threshold=0.7,
             flag_threshold=0.3,
             name="default",
@@ -117,10 +133,8 @@ class Guard:
     @classmethod
     def permissive(cls) -> Guard:
         """All semantic probes, loose thresholds. Only blocks on critical."""
-        from cordon.probes.semantic import SecretLeakProbe, TyposquatProbe
-
         return cls(
-            probes=[TyposquatProbe(), SecretLeakProbe()],
+            probes=cls._semantic_suite(),
             block_threshold=0.85,
             flag_threshold=0.5,
             name="permissive",

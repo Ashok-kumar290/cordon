@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Full 6-probe Semantic Guard suite** — completes the v0.2 detector roster:
+  - `SilentFailureProbe` — bare-except / `except Exception: pass` /
+    `except ... as e: pass`, empty JS/TS catch blocks, empty
+    `.catch(() => {})`, and shell mufflers (`2>/dev/null`, `|| true`,
+    `set +e`, `-DskipTests`).
+  - `ExfiltrationProbe` — sensitive-data egress over the network. Three
+    tiers: critical (shell upload-from-file like `curl -d @.env`),
+    dangerous (sensitive read + sink-shaped host like pastebin/ngrok),
+    suspicious (sensitive read + any egress).
+  - `TestSuppressionProbe` — skip-marker injection (`@pytest.mark.skip`,
+    `xit(`, `it.skip`), assertion-count drop on edited tests, test-file
+    deletion, test-runner config weakening (`skipTests: true`,
+    commented CI test steps), shell `--no-tests` flags.
+  - `SecurityWeakeningProbe` — TLS off (`verify=False`, `curl -k`,
+    `NODE_TLS_REJECT_UNAUTHORIZED=0`), auth bypass (`permitAll`,
+    `git push --no-verify`, IAM `"*"` resource/action), dangerous
+    primitives (`shell=True`, `eval`, `pickle.loads`), privilege
+    widening (`chmod 777`, `--privileged`, `runAsUser: 0`), crypto
+    downgrade (`hashlib.md5`, `alg: none`, `Math.random()` for tokens).
+- All three guard profiles (`strict` / `default` / `permissive`) now
+  bundle the full 6-probe suite by default.
+- 44 new probe tests (**85 total passing**).
+- `cordon demo` expanded to walk through all 6 attack classes plus a
+  benign baseline.
 - **`cordon.integrations.openai`** — first framework integration. Three entry points:
   - `ActionBuilder` — registry mapping tool names to `Action` constructors,
     with decorator and imperative APIs.

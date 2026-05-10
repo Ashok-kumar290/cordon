@@ -173,10 +173,17 @@ Custom thresholds and probe sets:
 
 ```python
 from cordon import Guard
-from cordon.probes.semantic import TyposquatProbe, SecretLeakProbe
+from cordon.probes.semantic import (
+    TyposquatProbe, SecretLeakProbe, SilentFailureProbe,
+    ExfiltrationProbe, TestSuppressionProbe, SecurityWeakeningProbe,
+)
 
 guard = Guard(
-    probes=[TyposquatProbe(), SecretLeakProbe()],
+    probes=[
+        TyposquatProbe(), SecretLeakProbe(),
+        SilentFailureProbe(), ExfiltrationProbe(),
+        TestSuppressionProbe(), SecurityWeakeningProbe(),
+    ],
     block_threshold=0.8,
     flag_threshold=0.4,
 )
@@ -184,7 +191,11 @@ guard = Guard(
 
 ## Status
 
-**v0.1** — first public release. Two semantic probes shipped (`TyposquatProbe`, `SecretLeakProbe`), full test coverage, CLI, decorator API. Four more semantic probes + environment probes land in **v0.2** over the next two weeks, together with the full 36-task benchmark reproducer.
+**v0.1** — first release. Two semantic probes (`TyposquatProbe`, `SecretLeakProbe`), CLI, decorator API.
+
+**v0.2 (current)** — full 6-probe Semantic Guard suite shipped: `TyposquatProbe`, `SecretLeakProbe`, `SilentFailureProbe`, `ExfiltrationProbe`, `TestSuppressionProbe`, `SecurityWeakeningProbe`. OpenAI integration. 85 tests passing.
+
+**v0.3 (next)** — environment probes (preview_diff, dry_run, sensitivity_scan, inspect_targets), Anthropic + LangChain integrations, the full 36-task benchmark reproducer (`cordon benchmark`), and PyPI release.
 
 ## Research
 
