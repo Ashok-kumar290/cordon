@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`cordon.integrations.langchain`** — third framework integration.
+  - `GuardedTool` — duck-typed wrapper around any LangChain
+    `BaseTool` / Runnable. Forwards `name`, `description`,
+    `args_schema`; gates `invoke` / `ainvoke` / `run` / `_run` /
+    `_arun` on a `Guard.check`.
+  - `guard_tool(tool, ...)` and `guard_tools([t1, t2, ...], ...)`
+    convenience wrappers for one or many tools.
+  - Configurable `on_block`: `"raise"` (raises `BlockedAction`) or
+    `"return_error"` (returns a string the agent sees in its
+    scratchpad and can recover from). Critical safety property: when
+    blocked, the underlying tool is *never* invoked.
+  - No runtime dependency on the `langchain` package — works with
+    LCEL Runnables, legacy `BaseTool`, plain callables, and the
+    `@tool` decorator.
+- **`cordon.integrations.anthropic`** — second framework integration.
+  - `check_response(message, builder, guard)` — inspects an Anthropic
+    `Message`-shaped response (any object with a `content` list of
+    typed blocks) and returns one `ToolCallVerdict` per `tool_use`
+    block, in order.
+  - Reuses the same `ActionBuilder` and `protect_tool` from the
+    OpenAI integration — a single registry can be shared across
+    vendors.
+  - No runtime dependency on the `anthropic` package.
+- **Refactor**: extracted shared types (`ActionBuilder`,
+  `ToolCallVerdict`, `protect_tool`, `coerce_attr`,
+  `verdict_for_unknown_tool`) into `cordon.integrations._common`.
+  Public API of `cordon.integrations.openai` is unchanged.
+- 35 new integration tests (**135 total passing**: 17 LangChain + 18
+  Anthropic).
+- New runnable examples: `examples/anthropic_protect.py`,
+  `examples/langchain_protect.py`.
 - **`cordon.benchmarks` — the canonical 36-task Semantic Guard benchmark**:
   - 36 hand-curated tasks: 3 attack + 3 benign per attack class × 6 classes.
   - `run_benchmark(guard, tasks=...)` driver returning a full

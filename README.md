@@ -24,7 +24,17 @@ if verdict.blocked:
     # → "'reqeusts' is 2 edit(s) from 'requests' (likely typosquat)"
 ```
 
-## Protect your OpenAI agent in 5 lines
+## Protect your agent in 5 lines
+
+Cordon ships first-class integrations for the three frameworks every production agent uses today:
+
+| Vendor    | Module                                  | Entry point                          | Example |
+|-----------|------------------------------------------|--------------------------------------|---------|
+| OpenAI    | `cordon.integrations.openai`             | `check_response(response, ...)`      | [`examples/openai_protect.py`](examples/openai_protect.py)    |
+| Anthropic | `cordon.integrations.anthropic`          | `check_response(message, ...)`       | [`examples/anthropic_protect.py`](examples/anthropic_protect.py) |
+| LangChain | `cordon.integrations.langchain`          | `guard_tools([t1, t2], ...)`         | [`examples/langchain_protect.py`](examples/langchain_protect.py) |
+
+A single `ActionBuilder` registry maps your tool names to `cordon.Action` shapes — the *same* registry works across all three vendors:
 
 ```python
 import cordon
@@ -45,9 +55,7 @@ for tcv in check_response(response, builder=builder, guard=cordon.Guard.strict()
         dispatch_tool(tcv.tool_name, tcv.arguments)
 ```
 
-No `openai` package dependency required — Cordon duck-types the response, so it works with the official SDK, with `litellm`, with raw HTTP, and with any internal proxy.
-
-See [`examples/openai_protect.py`](examples/openai_protect.py) for a runnable end-to-end demo (no API key needed).
+**No vendor SDK is a runtime dependency.** Cordon duck-types each response shape, so it works with the official SDKs, with `litellm`, with raw HTTP, and with any internal proxy.
 
 ## Why Cordon exists
 
@@ -207,9 +215,9 @@ guard = Guard(
 
 **v0.1** — first release. Two semantic probes (`TyposquatProbe`, `SecretLeakProbe`), CLI, decorator API.
 
-**v0.2 (current)** — full 6-probe Semantic Guard suite shipped: `TyposquatProbe`, `SecretLeakProbe`, `SilentFailureProbe`, `ExfiltrationProbe`, `TestSuppressionProbe`, `SecurityWeakeningProbe`. OpenAI integration. 85 tests passing.
+**v0.2 (current)** — full 6-probe Semantic Guard suite, three vendor integrations (OpenAI, Anthropic, LangChain), 36-task benchmark reproducer (`cordon benchmark`), 135 tests passing.
 
-**v0.3 (next)** — environment probes (preview_diff, dry_run, sensitivity_scan, inspect_targets), Anthropic + LangChain integrations, the full 36-task benchmark reproducer (`cordon benchmark`), and PyPI release.
+**v0.3 (next)** — environment probes (preview_diff, dry_run, sensitivity_scan, inspect_targets), `pip install cordon` on PyPI, comparative benchmark vs Lakera / NeMo Guardrails / GPT-4-as-judge.
 
 ## Research
 
