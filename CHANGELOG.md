@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`cordon.benchmarks.comparators` + `cordon compare` CLI** —
+  comparative benchmark framework. Runs the same 36-task suite
+  through multiple judges side-by-side and prints TPR / FPR /
+  control score / latency for each.
+  - `Comparator` ABC + `ComparatorResult` / `ComparatorVerdict`
+    with `"skipped"` decision support so external-API judges that
+    lack credentials are excluded from rate calculations rather
+    than contaminating them.
+  - `CordonComparator(guard)` — the headline column.
+  - `KeywordHeuristicComparator` — substring-match block-list,
+    realistic naive baseline ("what your security team builds in
+    an afternoon").
+  - `TranscriptOnlyComparator` — charitable transcript-monitor
+    upper bound. Narrates the action from `command` + filenames
+    only (never file content) and looks for red-flag words.
+  - `LakeraComparator` — Lakera Guard REST API. Skips when no
+    `LAKERA_API_KEY`.
+  - `LLMJudgeComparator` — OpenAI chat-completions JSON-mode
+    judge (default `gpt-4o-mini`). Skips when no `OPENAI_API_KEY`.
+  - **Headline numbers (no API keys needed)**: Cordon (strict)
+    1.000 / 0.000 / 1.000; keyword heuristic 0.056 / 0.000 / 0.056;
+    charitable transcript-only 0.167 / 0.000 / 0.167. Cordon catches
+    18× more attacks than the naive baseline and 6× more than a
+    charitable transcript monitor at zero false positives.
+- 15 new tests on the comparator framework + the API-key-free
+  comparators. **150 tests passing total.**
+
 ## [0.2.0] — 2026-05-11
 
 ### Added

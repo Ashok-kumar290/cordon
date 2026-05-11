@@ -304,5 +304,148 @@ def benchmark(
         raise typer.Exit(code=1)
 
 
+@app.command()
+def compare(
+    comparators: str = typer.Option(
+        "cordon,heuristic,transcript",
+        "--comparators", "-c",
+        help=("Comma-separated comparators to run. Available: "
+              "cordon, heuristic, transcript, lakera, llm-judge, all."),
+    ),
+    profile: str = typer.Option(
+        "strict", "--profile", "-p",
+        help="Guard profile to use for the cordon comparator (strict | default | permissive).",
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Emit full report as JSON to stdout."),
+    lakera_key: str = typer.Option(
+        None, "--lakera-key", envvar="LAKERA_API_KEY",
+        help="Lakera Guard API key (also picks up $LAKERA_API_KEY).",
+    ),
+    openai_key: str = typer.Option(
+        None, "--openai-key", envvar="OPENAI_API_KEY",
+        help="OpenAI API key for the LLM-judge comparator (also $OPENAI_API_KEY).",
+    ),
+    judge_model: str = typer.Option(
+        "gpt-4o-mini", "--judge-model",
+        help="Model to use for the LLM-judge comparator.",
+    ),
+) -> None:
+    """Compare Cordon side-by-side against other agent-safety tools.
+
+    Runs the same 36-task suite through every selected comparator and
+    prints TPR, FPR, control score, and mean latency for each. The
+    comparators that need API keys (lakera, llm-judge) silently skip
+    every task if no key is provided — they appear in the report as
+    'skipped'.
+
+    The artifact this produces is the comparative table for the
+    README and the pitch deck.
+    """
+    from cordon.benchmarks.comparators import (
+        CordonComparator,
+        KeywordHeuristicComparator,
+        TranscriptOnlyComparator,
+        _try_import_lakera,
+        _try_import_llm_judge,
+    )
+    from cordon.benchmarks.compare import run_comparative
+
+    requested = {c.strip().lower() for c in comparators.split(",") if c.strip()}
+    if "all" in requested:
+        requested = {"cordon", "heuristic", "transcript", "lakera", "llm-judge"}
+
+    cmps: list = []
+    if "cordon" in requested:
+        cmps.append(CordonComparator(_guard_for_profile(profile),
+                                     name=f"Cordon ({profile})"))
+    if "heuristic" in requested:
+        cmps.append(KeywordHeuristicComparator())
+    if "transcript" in requested:
+        cmps.append(TranscriptOnlyComparator())
+    if "lakera" in requested:
+        Lakera = _try_import_lakera()
+        if Lakera is None:
+            console.print("[yellow]lakera comparator not available (module missing); skipping.[/yellow]")
+        else:
+            cmps.append(Lakera(api_key=lakera_key))
+    if "llm-judge" in requested:
+        Judge = _try_import_llm_judge()
+        if Judge is None:
+            console.print("[yellow]llm-judge comparator not available (module missing); skipping.[/yellow]")
+        else:
+            cmps.append(Judge(api_key=openai_key, model=judge_model))
+
+    if not cmps:
+        console.print("[red]No valid comparators selected.[/red]")
+        raise typer.Exit(code=2)
+
+    report = run_comparative(cmps)
+
+    if json_out:
+        sys.stdout.write(json.dumps(report.to_dict(), indent=2))
+        sys.stdout.write("\n")
+        return
+
+    # Headline table.
+    table = Table(title=f"Comparative benchmark — {report.n_tasks_total} tasks "
+                        f"(18 attacks, 18 benign)")
+    table.add_column("Comparator", style="cyan", no_wrap=True)
+    table.add_column("Block rate (TPR)", justify="right")
+    table.add_column("FPR", justify="right")
+    table.add_column("Control", justify="right")
+    table.add_column("Passed", justify="right")
+    table.add_column("Mean ms", justify="right")
+    table.add_column("Skipped", justify="right")
+
+    best = report.best_by_control_score()
+    for s in report.stats:
+        if s.skipped == report.n_tasks_total:
+            table.add_row(s.name, "—", "—", "—", "—", "—",
+                          f"{s.skipped}/{report.n_tasks_total}")
+            continue
+        is_best = best is not None and s.name == best.name
+        cs_str = f"{s.control_score:.3f}"
+        if is_best:
+            cs_str = f"[bold green]{cs_str}[/bold green]"
+        tpr_color = "green" if s.block_rate >= 0.99 else (
+            "yellow" if s.block_rate >= 0.5 else "red")
+        fpr_color = "green" if s.false_positive_rate == 0.0 else (
+            "yellow" if s.false_positive_rate < 0.1 else "red")
+        table.add_row(
+            s.name,
+            f"[{tpr_color}]{s.block_rate:.3f}[/{tpr_color}] "
+            f"({s.blocked_attacks}/{s.n_attacks})",
+            f"[{fpr_color}]{s.false_positive_rate:.3f}[/{fpr_color}] "
+            f"({s.blocked_benign}/{s.n_benign})",
+            cs_str,
+            f"{s.passed}/{s.n_tasks}",
+            f"{s.mean_duration_ms:.2f}",
+            f"{s.skipped}" if s.skipped else "—",
+        )
+    console.print(table)
+
+    # Per-category attack TPR matrix.
+    cats = sorted({c for s in report.stats for c in s.per_category})
+    if cats:
+        ctable = Table(title="Per-category block rate (attacks only)")
+        ctable.add_column("Comparator", style="cyan", no_wrap=True)
+        for cat in cats:
+            ctable.add_column(cat, justify="right")
+        for s in report.stats:
+            if s.n_tasks == 0:
+                continue
+            row = [s.name]
+            for cat in cats:
+                stats = s.per_category.get(cat)
+                if not stats:
+                    row.append("—")
+                    continue
+                tpr = stats["tpr"]
+                color = "green" if tpr >= 0.99 else ("yellow" if tpr >= 0.5 else "red")
+                row.append(f"[{color}]{tpr:.2f}[/{color}]")
+            ctable.add_row(*row)
+        console.print(ctable)
+
+
 if __name__ == "__main__":
     app()
