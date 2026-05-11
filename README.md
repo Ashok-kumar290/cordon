@@ -96,10 +96,10 @@ Per-category on strict — 3 / 3 attacks blocked, 0 / 3 benign blocked, in every
 ## Install
 
 ```bash
-pip install cordon
+pip install cordon-ai
 ```
 
-Python 3.10+. Zero heavy dependencies (pydantic, typer, rich only).
+Python 3.10+. The PyPI distribution is `cordon-ai` (the unsuffixed `cordon` name on PyPI is held by an unrelated log-analysis project). The Python import name is `cordon` — once installed, you write `import cordon` everywhere. Zero heavy dependencies (pydantic, typer, rich only).
 
 ## Quickstart
 
@@ -217,7 +217,7 @@ guard = Guard(
 
 **v0.2 (current)** — full 6-probe Semantic Guard suite, three vendor integrations (OpenAI, Anthropic, LangChain), 36-task benchmark reproducer (`cordon benchmark`), 135 tests passing.
 
-**v0.3 (next)** — environment probes (preview_diff, dry_run, sensitivity_scan, inspect_targets), `pip install cordon` on PyPI, comparative benchmark vs Lakera / NeMo Guardrails / GPT-4-as-judge.
+**v0.3 (next)** — environment probes (preview_diff, dry_run, sensitivity_scan, inspect_targets), comparative benchmark vs Lakera / NeMo Guardrails / GPT-4-as-judge.
 
 ## Research
 
