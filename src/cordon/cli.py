@@ -329,6 +329,13 @@ def compare(
         "gpt-4o-mini", "--judge-model",
         help="Model to use for the LLM-judge comparator.",
     ),
+    judge_endpoint: str = typer.Option(
+        None, "--judge-endpoint",
+        help=("Override the LLM-judge HTTP endpoint. Use to point at "
+              "OpenAI-compatible providers like OpenRouter "
+              "(https://openrouter.ai/api/v1/chat/completions), "
+              "Together, Groq, etc. Defaults to OpenAI."),
+    ),
 ) -> None:
     """Compare Cordon side-by-side against other agent-safety tools.
 
@@ -373,7 +380,10 @@ def compare(
         if Judge is None:
             console.print("[yellow]llm-judge comparator not available (module missing); skipping.[/yellow]")
         else:
-            cmps.append(Judge(api_key=openai_key, model=judge_model))
+            judge_kwargs: dict = {"api_key": openai_key, "model": judge_model}
+            if judge_endpoint:
+                judge_kwargs["endpoint"] = judge_endpoint
+            cmps.append(Judge(**judge_kwargs))
 
     if not cmps:
         console.print("[red]No valid comparators selected.[/red]")

@@ -44,6 +44,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Raw measured run archived at
   `docs/benchmarks/comparative-2026-05-11.json` (5 comparators,
   180 task results, full per-task reasons + raw API payloads).
+- **LLM judge measured against `openai/gpt-4o-mini` via OpenRouter
+  (May 2026)**: TPR 0.833, FPR 0.056, control score **0.787**,
+  mean latency **1219 ms** per task. The second-best column in the
+  table on accuracy, but ~6,000× slower than Cordon, non-
+  deterministic, and adds per-step API cost. Misses the 1-character
+  typosquat (`reqeusts` for `requests`) and 2/3 of the test-
+  suppression attacks. Raw run archived at
+  `docs/benchmarks/llm-judge-2026-05-11.json`.
+- `cordon compare --judge-endpoint <url>` — point the LLM-judge
+  comparator at any OpenAI-compatible endpoint (OpenRouter,
+  Together, Groq, vLLM, llama.cpp, etc.) instead of OpenAI directly.
 
 ## [0.2.0] — 2026-05-11
 

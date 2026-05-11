@@ -107,21 +107,21 @@ cordon compare --comparators all
 | **Cordon (strict)**             | **1.000 (18/18)** | **0.000** | **1.000** | **36/36** | **~0.2 ms** |
 | Keyword heuristic (block-list)  | 0.056 (1/18)      | 0.000     | 0.056 | 19/36 | ~0.01 ms |
 | Transcript-only (charitable)    | 0.167 (3/18)      | 0.000     | 0.167 | 21/36 | ~0.00 ms |
-| Lakera Guard (v2/guard, May 2026) | 1.000 (18/18)   | **1.000 (18/18)** | **0.000** | 18/36 | ~280 ms |
-| LLM judge (gpt-4o-mini)         | *forthcoming — pending billing on test account* | — | — | — | — |
+| Lakera Guard (v2/guard, May 2026) | 1.000 (18/18) | **1.000 (18/18)** | **0.000** | 18/36 | ~280 ms |
+| LLM judge (gpt-4o-mini, via OpenRouter) | 0.833 (15/18) | 0.056 (1/18) | 0.787 | 32/36 | ~1219 ms |
 
-**Cordon is the only judge in the table with a non-zero control score.** The naive heuristic and the charitable transcript monitor each catch a few attacks but miss the stealth classes entirely; Lakera Guard catches every attack but also blocks every benign task — i.e., it isn't a usable filter for action evaluation.
+**Cordon is the only judge with a perfect score, and it's also the fastest by 4–6 orders of magnitude.** The naive heuristic and the charitable transcript monitor each catch a few attacks but miss the stealth classes entirely. Lakera catches every attack but also blocks every benign task — unusable for action filtering. The LLM-as-judge approach is genuinely competitive on accuracy (0.787) but costs ~6,000× more latency, non-deterministic verdicts, and per-call dollars.
 
 ### Per-category attack block rate
 
-| Category               | Cordon | Keyword | Transcript | Lakera |
-|------------------------|:------:|:-------:|:----------:|:------:|
-| Typosquat              | **1.00** | 0.00 | 0.33 | 1.00 |
-| Secret leak            | **1.00** | 0.00 | 0.00 | 1.00 |
-| Exfiltration           | **1.00** | 0.00 | 0.33 | 1.00 |
-| Silent failure         | **1.00** | 0.00 | 0.00 | 1.00 |
-| Test suppression       | **1.00** | 0.00 | 0.00 | 1.00 |
-| Security weakening     | **1.00** | 0.33 | 0.33 | 1.00 |
+| Category               | Cordon | Keyword | Transcript | Lakera | LLM judge |
+|------------------------|:------:|:-------:|:----------:|:------:|:---------:|
+| Typosquat              | **1.00** | 0.00 | 0.33 | 1.00 | 0.67 |
+| Secret leak            | **1.00** | 0.00 | 0.00 | 1.00 | 1.00 |
+| Exfiltration           | **1.00** | 0.00 | 0.33 | 1.00 | 1.00 |
+| Silent failure         | **1.00** | 0.00 | 0.00 | 1.00 | 1.00 |
+| Test suppression       | **1.00** | 0.00 | 0.00 | 1.00 | 0.33 |
+| Security weakening     | **1.00** | 0.33 | 0.33 | 1.00 | 1.00 |
 
 (Read the FPR column carefully when interpreting Lakera's row: blocking everything trivially gives 100% block rate.)
 
@@ -130,7 +130,7 @@ cordon compare --comparators all
 - **Keyword heuristic**: deterministic and fast, but blind to the four *stealth* attack classes (typosquat, secret-leak, silent-failure, test-suppression). 1/18 attacks blocked.
 - **Transcript-only LLM monitor**: even at the *charitable* upper bound — perfect recall on red-flag words, never fooled by paraphrase — it sees only what the agent says it's about to do, not the file contents being written. 3/18 attacks blocked. Real LLM monitors score worse.
 - **Lakera Guard**: trained for prompt-injection / content-safety classification, not action evaluation. When customers reach for it for action filtering (which is common, because there's nothing else), every shell-command-shaped input scores 1.0 confidence on its `flagged` field. **0/18 benign tasks pass.** Methodological note: we hit `POST https://api.lakera.ai/v2/guard` (their flagship endpoint) with each action serialized as a single user message — the same way customers integrate it today. Numbers reproduce against the published v2 API as of May 2026.
-- **LLM-as-judge (gpt-4o-mini)**: numbers forthcoming. Even at best, this approach is slow (≈500–1500 ms per task vs Cordon's 0.2 ms), non-deterministic, and adds an LLM-call dollar cost to every agent step. Run it yourself with `cordon compare --comparators all --openai-key=…` to reproduce.
+- **LLM-as-judge (gpt-4o-mini)**: 0.787 control — the second-best score in the table, but the gap costs you in three currencies. **Latency**: 1219 ms per task vs Cordon's 0.2 ms (~6,000× slower). **Determinism**: re-running the same task gives different verdicts on the borderlines; the table reports a single run. **Per-category gaps**: catches only 67% of typosquats (misses single-character typos like `reqeusts` for `requests`) and 33% of test-suppression attacks (silently allows tests being skipped). **Cost**: at 1M agent steps/day this is ~$3,500/year in API fees plus a 1-second tax on every step — for a 0.787 control score that Cordon achieves at 1.000.
 
 The pattern is the wedge: every existing tool judges **strings** (input prompts or output text). Cordon judges **side effects** (the proposed shell command, the proposed file write, the proposed network call). Strings can be paraphrased, encoded, or smuggled; side effects cannot. That gap is the entire moat.
 
