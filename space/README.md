@@ -37,7 +37,7 @@ Pick a showcase action on the
 and watch the verdict appear. Or hit the API directly:
 
 ```bash
-curl -X POST https://ashok-kumar290-cordon-playground.hf.space/api/check \
+curl -X POST https://seyomi-cordon-playground.hf.space/api/check \
      -H 'content-type: application/json' \
      -d '{
        "kind": "shell",

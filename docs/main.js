@@ -22,7 +22,7 @@
 
   // ─── Backend URL resolution ───────────────────────────────────────
   const DEFAULT_BACKEND =
-    "https://ashok-kumar290-cordon-playground.hf.space";
+    "https://seyomi-cordon-playground.hf.space";
 
   const BACKEND = (() => {
     try {

@@ -5,7 +5,7 @@
 Cordon runs deterministic safety probes on a proposed agent action *before* it executes. No LLM calls, no heuristics, no inference latency — just fast, auditable, replayable verdicts on whether an action is safe to run.
 
 - **Live playground:** <https://ashok-kumar290.github.io/cordon/>
-- **Hosted API:**     <https://ashok-kumar290-cordon-playground.hf.space/api/docs>
+- **Hosted API:**     <https://seyomi-cordon-playground.hf.space/api/docs>
 - **PyPI:**           [`cordon-ai`](https://pypi.org/project/cordon-ai/) · `pip install cordon-ai`
 - **Benchmark:**      1.000 control score on a 36-task public benchmark, 0.2 ms median verdict latency
 
