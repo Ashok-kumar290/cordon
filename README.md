@@ -4,8 +4,13 @@
 
 Cordon runs deterministic safety probes on a proposed agent action *before* it executes. No LLM calls, no heuristics, no inference latency — just fast, auditable, replayable verdicts on whether an action is safe to run.
 
+- **Live playground:** <https://ashok-kumar290.github.io/cordon/>
+- **Hosted API:**     <https://ashok-kumar290-cordon-playground.hf.space/api/docs>
+- **PyPI:**           [`cordon-ai`](https://pypi.org/project/cordon-ai/) · `pip install cordon-ai`
+- **Benchmark:**      1.000 control score on a 36-task public benchmark, 0.2 ms median verdict latency
+
 ```bash
-pip install cordon
+pip install cordon-ai
 ```
 
 ```python
@@ -266,6 +271,27 @@ Cordon is the production-grade descendant of two research projects:
 
 - **ActionLens** — 3rd place at [Apart Research](https://apartresearch.com/) AI Control Hackathon 2026 (36 countries). Introduced the pre-execution environment probes and the 36-task benchmark. [Repo →](https://github.com/Ashok-kumar290/ActionLens)
 - **Context-Conditioned Confidentiality Failures in Refusal-Tuned Language Models** — Cohere Catalyst Grant, 2026. Showed that refusal-tuned models leak confidential context at 46–62% even when explicitly instructed not to. This is the empirical basis for Cordon's secret-leak probe.
+
+## Deployment
+
+The repo ships two deployment surfaces for the live playground:
+
+- **Static landing page** (`docs/`) — pure HTML/CSS/JS, deployed to GitHub Pages from the `main` branch's `/docs` folder. Enable in *Settings → Pages → Source = `Deploy from a branch`, Branch = `main`, Folder = `/docs`*. Site goes live at <https://ashok-kumar290.github.io/cordon/>.
+- **FastAPI backend** (`web/`) — deployed to a Hugging Face Space via `space/deploy.sh`. Free, Docker-based, public API at `https://<user>-cordon-playground.hf.space`. The static landing page calls this backend cross-origin (CORS is allowlisted for `ashok-kumar290.github.io` and `cordon.ai`).
+
+```bash
+# One-time: create the Space on https://huggingface.co/new-space
+#   SDK = Docker, Visibility = Public, leave empty.
+# Then push:
+bash space/deploy.sh <your-hf-username>
+```
+
+The backend can also be self-hosted via `web/Dockerfile` or `fly launch` using the included `web/fly.toml`. Override the landing-page backend at runtime from the browser console:
+
+```javascript
+localStorage.setItem('cordon_backend', 'https://my-cordon.example.com');
+location.reload();
+```
 
 ## Contributing
 

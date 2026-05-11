@@ -36,6 +36,7 @@ passed into ``Guard(probes=[...])``. The decorator API
 from __future__ import annotations
 
 import functools
+import warnings
 from collections.abc import Callable, Iterable
 from typing import Any
 
@@ -70,6 +71,13 @@ class Guard:
             return shell.execute(action.command)
     """
 
+    # Listener type alias: a callable that receives every (Action, Verdict)
+    # pair the guard produces. Used by ``cordon.cloud`` to ship telemetry
+    # to a hosted dashboard. Listeners must NEVER raise — exceptions
+    # are caught and logged to ``warnings`` so a misbehaving listener
+    # cannot break agent execution.
+    Listener = Callable[[Action, Verdict], None]
+
     def __init__(
         self,
         probes: Iterable[Probe] | None = None,
@@ -77,6 +85,7 @@ class Guard:
         block_threshold: float = 0.7,
         flag_threshold: float = 0.3,
         name: str = "custom",
+        listeners: Iterable["Guard.Listener"] | None = None,
     ) -> None:
         self.probes: list[Probe] = list(probes) if probes is not None else []
         self.block_threshold = block_threshold
@@ -87,6 +96,38 @@ class Guard:
             raise ValueError(
                 "Thresholds must satisfy 0 <= flag_threshold <= block_threshold <= 1"
             )
+
+        self._listeners: list[Guard.Listener] = list(listeners) if listeners else []
+
+    # ─── Listeners (telemetry / cloud reporting) ──────────────────────────────
+
+    def add_listener(self, listener: "Guard.Listener") -> None:
+        """Register a callback invoked on every verdict.
+
+        Used by :mod:`cordon.cloud` to ship telemetry to a hosted
+        dashboard. Listeners must be fast and non-blocking — wrap any
+        I/O in a background thread or async task. Exceptions raised by
+        a listener are caught and discarded so a faulty observer can
+        never break agent execution.
+        """
+        self._listeners.append(listener)
+
+    def remove_listener(self, listener: "Guard.Listener") -> None:
+        try:
+            self._listeners.remove(listener)
+        except ValueError:
+            pass
+
+    def _notify_listeners(self, action: Action, verdict: Verdict) -> None:
+        for listener in self._listeners:
+            try:
+                listener(action, verdict)
+            except Exception as exc:  # noqa: BLE001 — listeners must never break agents
+                warnings.warn(
+                    f"cordon guard listener {listener!r} raised {exc!r}; ignored.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
 
     # ─── Constructors for common profiles ─────────────────────────────────────
 
@@ -144,6 +185,11 @@ class Guard:
 
     def check(self, action: Action) -> Verdict:
         """Run all probes against ``action`` and return the aggregated verdict."""
+        verdict = self._compute_verdict(action)
+        self._notify_listeners(action, verdict)
+        return verdict
+
+    def _compute_verdict(self, action: Action) -> Verdict:
         all_results: list[ProbeResult] = [probe.run(action) for probe in self.probes]
         triggered = [r for r in all_results if r.triggered]
 

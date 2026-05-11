@@ -26,6 +26,7 @@ Deploy: ``fly launch`` (with the included ``fly.toml``) or
 
 from __future__ import annotations
 
+import os
 import time
 from collections import defaultdict, deque
 from pathlib import Path
@@ -34,6 +35,7 @@ from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -237,14 +239,67 @@ app = FastAPI(
     redoc_url=None,
 )
 
+# ─── CORS ────────────────────────────────────────────────────────────────────
+# The static landing page is served from GitHub Pages (and eventually from a
+# real domain) and calls this backend cross-origin. Allow the production
+# origins explicitly, plus localhost for development. Credentials are off so
+# we don't need to worry about cookies; ``CORDON_ALLOWED_ORIGINS`` is a
+# comma-separated env var for additional origins (custom domain swap-in).
+
+_DEFAULT_ALLOWED_ORIGINS = [
+    "https://ashok-kumar290.github.io",
+    "https://cordon.ai",
+    "https://www.cordon.ai",
+    "http://localhost:8000",
+    "http://localhost:8080",
+    "http://127.0.0.1:8000",
+    "http://127.0.0.1:8080",
+]
+
+_extra = os.environ.get("CORDON_ALLOWED_ORIGINS", "")
+_allowed_origins = _DEFAULT_ALLOWED_ORIGINS + [
+    o.strip() for o in _extra.split(",") if o.strip()
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_allowed_origins,
+    allow_origin_regex=r"https://.*\.hf\.space$",  # any Hugging Face Space subdomain
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+    max_age=600,
+)
+
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 @app.get("/", include_in_schema=False)
-def index() -> FileResponse:
-    """Serve the landing page."""
-    return FileResponse(TEMPLATES_DIR / "index.html")
+def index() -> Any:
+    """Serve the landing page when the templates ship alongside the app
+    (the canonical web deployment), or fall back to a JSON manifest when
+    they don't (the Hugging Face Space deployment, which is API-only —
+    its landing page lives on GitHub Pages instead).
+    """
+    landing = TEMPLATES_DIR / "index.html"
+    if landing.exists():
+        return FileResponse(landing)
+    return JSONResponse(
+        {
+            "service": "cordon-playground-api",
+            "version": cordon.__version__,
+            "endpoints": {
+                "health":    "/healthz",
+                "examples":  "/api/examples",
+                "check":     "/api/check  (POST)",
+                "benchmark": "/api/benchmark",
+                "docs":      "/api/docs",
+            },
+            "landing_page": "https://ashok-kumar290.github.io/cordon/",
+            "source":       "https://github.com/Ashok-kumar290/cordon",
+        }
+    )
 
 
 @app.get("/healthz", include_in_schema=False)

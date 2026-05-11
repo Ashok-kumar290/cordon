@@ -39,3 +39,4 @@ Thumbs.db
 .env
 .env.*
 *.env
+generated-page.html
