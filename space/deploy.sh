@@ -44,6 +44,23 @@ SPACE_URL="https://huggingface.co/spaces/${HF_USER}/${SPACE_NAME}"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WORK_DIR="$(mktemp -d -t cordon-space.XXXXXX)"
 
+# ── Resolve an HF write token for the push ────────────────────────
+# The ``hf auth login`` command saves the token to its own cache but
+# does NOT configure git's credential helper unless the user passed
+# ``--add-to-git-credential``. Rather than make the user re-login,
+# read the cached token and embed it in the push URL.
+HF_TOKEN="${HF_TOKEN:-${HUGGINGFACE_TOKEN:-${HUGGING_FACE_HUB_TOKEN:-}}}"
+if [[ -z "$HF_TOKEN" ]] && [[ -r "$HOME/.cache/huggingface/token" ]]; then
+  HF_TOKEN="$(< "$HOME/.cache/huggingface/token" tr -d '[:space:]')"
+fi
+if [[ -z "$HF_TOKEN" ]]; then
+  echo "error: no HF token found." >&2
+  echo "  run:  .venv/bin/hf auth login" >&2
+  echo "  or:   export HF_TOKEN=hf_xxx" >&2
+  exit 65
+fi
+PUSH_URL="https://${HF_USER}:${HF_TOKEN}@huggingface.co/spaces/${HF_USER}/${SPACE_NAME}"
+
 cleanup() { rm -rf "$WORK_DIR"; }
 trap cleanup EXIT
 
@@ -85,10 +102,10 @@ git -c user.name="Cordon Deploy" \
     -c user.email="deploy@cordon.local" \
     commit -m "deploy: sync cordon-playground backend"
 
-git push origin main
+git push "$PUSH_URL" main
 
 echo
 echo "✓ pushed. Build status:"
 echo "    $SPACE_URL"
-echo "✓ public API will be live at:"
-echo "    https://${HF_USER}-${SPACE_NAME}.hf.space"
+echo "✓ live URL (landing page + API, same origin):"
+echo "    https://${HF_USER,,}-${SPACE_NAME,,}.hf.space"
