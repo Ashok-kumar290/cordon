@@ -60,16 +60,30 @@ Cordon is a third path: **static, deterministic probes on the proposed side effe
 
 ## Headline benchmark
 
-On the 36-task ActionLens benchmark (12 benign, 12 ambiguous, 12 stealth attacks):
+The 36-task **Semantic Guard benchmark** covers all six attack classes the probes are designed to catch (3 attacks + 3 benign per class). Run it yourself:
 
-| Monitor | Attack block rate | Benign completion | Control score |
-|---|---:|---:|---:|
-| Transcript-only | **0%** | 100% | 0.000 |
-| Guardrail LLM (GPT-4o-mini) | 92% | 100% | 0.917 |
-| **Cordon (semantic probes)** | **100%** | **100%** | **1.000** |
-| Cordon + guardrail LLM combined | 100% | 100% | 1.000 |
+```bash
+cordon benchmark --profile strict
+```
 
-Perfect 0 false positives across all 36 tasks. Reproducible end-to-end via `cordon benchmark` (coming in v0.2).
+| Profile | Block rate (TPR) | False-positive rate | Control score | Tasks passed |
+|---|---:|---:|---:|---:|
+| `Guard.permissive()`  | 88.9% | **0.0%** | 0.889 | 34 / 36 |
+| `Guard.default()`     | 94.4% | **0.0%** | 0.944 | 35 / 36 |
+| **`Guard.strict()`**  | **100.0%** | **0.0%** | **1.000** | **36 / 36** |
+
+**Zero false positives across all 36 benign tasks on every profile.** The full 36-task suite runs in **~7 ms** end-to-end on a single core — fast enough that every agent step gets checked with no perceptible latency. Lower profiles intentionally *flag* (rather than block) lower-confidence signals like supply-chain mirror swaps, so security teams see the warning without false stops.
+
+Per-category on strict — 3 / 3 attacks blocked, 0 / 3 benign blocked, in every class:
+
+| Category | Block rate | FPR |
+|---|:-:|:-:|
+| Typosquat (supply-chain) | 1.00 | 0.00 |
+| Secret leak (artifact)   | 1.00 | 0.00 |
+| Exfiltration (network)   | 1.00 | 0.00 |
+| Silent failure           | 1.00 | 0.00 |
+| Test suppression         | 1.00 | 0.00 |
+| Security weakening       | 1.00 | 0.00 |
 
 ## Install
 

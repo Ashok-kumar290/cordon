@@ -223,5 +223,86 @@ def demo(
         console.print()
 
 
+@app.command()
+def benchmark(
+    profile: str = typer.Option("default", "--profile", "-p",
+                                help="Guard profile: strict | default | permissive."),
+    json_out: bool = typer.Option(False, "--json", help="Emit full report as JSON to stdout."),
+    show_failures: bool = typer.Option(True, "--failures/--no-failures",
+                                       help="Print per-task failures."),
+) -> None:
+    """Run the canonical 36-task Semantic Guard benchmark.
+
+    Reports block rate (true-positive on attacks), false-positive rate
+    (on benign tasks), and control score (TPR × (1 − FPR)). A perfect
+    run is 1.000 / 0.000 / 1.000.
+    """
+    from cordon.benchmarks import run_benchmark
+
+    guard = _guard_for_profile(profile)
+    report = run_benchmark(guard)
+
+    if json_out:
+        sys.stdout.write(json.dumps(report.to_dict(), indent=2))
+        sys.stdout.write("\n")
+        if report.passed_count != report.total:
+            raise typer.Exit(code=1)
+        return
+
+    s = report.to_dict()["summary"]
+
+    summary_color = "green" if report.passed_count == report.total else "yellow"
+    console.print(Panel(
+        f"[bold]Profile:[/bold] {report.guard_name}\n"
+        f"[bold]Tasks:[/bold] {report.passed_count}/{report.total} passed\n"
+        f"[bold]Block rate (TPR):[/bold]      {s['block_rate']:.3f}  "
+        f"({report.blocked_attacks}/{report.n_attacks} attacks blocked)\n"
+        f"[bold]False positive rate:[/bold]   {s['false_positive_rate']:.3f}  "
+        f"({report.blocked_benign}/{report.n_benign} benign blocked)\n"
+        f"[bold]Control score:[/bold]         {s['control_score']:.3f}\n"
+        f"[bold]Total time:[/bold]            {s['total_duration_ms']:.1f} ms",
+        title="[bold]Cordon — Semantic Guard 36-task benchmark[/bold]",
+        border_style=summary_color,
+    ))
+
+    table = Table(title="Per-category breakdown")
+    table.add_column("Category", style="cyan")
+    table.add_column("Attacks", justify="right")
+    table.add_column("Block rate", justify="right")
+    table.add_column("Benign", justify="right")
+    table.add_column("FPR", justify="right")
+    for cat, stats in report.per_category().items():
+        block_color = "green" if stats["block_rate"] == 1.0 else "yellow"
+        fpr_color = "green" if stats["false_positive_rate"] == 0.0 else "red"
+        table.add_row(
+            cat,
+            f"{stats['blocked_attacks']}/{stats['n_attacks']}",
+            f"[{block_color}]{stats['block_rate']:.2f}[/{block_color}]",
+            f"{stats['blocked_benign']}/{stats['n_benign']}",
+            f"[{fpr_color}]{stats['false_positive_rate']:.2f}[/{fpr_color}]",
+        )
+    console.print(table)
+
+    if show_failures:
+        failures = report.failures()
+        if failures:
+            console.print(f"\n[yellow]{len(failures)} task(s) did not match expected outcome:[/yellow]")
+            ftable = Table()
+            ftable.add_column("Task", style="cyan")
+            ftable.add_column("Category")
+            ftable.add_column("Expected")
+            ftable.add_column("Got")
+            ftable.add_column("Description", overflow="fold")
+            for f in failures:
+                ftable.add_row(
+                    f.task.id, f.task.category, f.task.expected,
+                    f.verdict.decision, f.task.description,
+                )
+            console.print(ftable)
+
+    if report.passed_count != report.total:
+        raise typer.Exit(code=1)
+
+
 if __name__ == "__main__":
     app()

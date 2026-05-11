@@ -199,10 +199,15 @@ class TestSuppressionProbe(Probe):
                 })
 
         # Assertion-count drop on an existing test file.
+        # We require an absolute drop of >= 2 to avoid flagging legitimate
+        # refactors (e.g., combining two assertions into one tuple compare).
+        # A drop of >= 2 with no compensating new test functions is a strong
+        # suppression signal.
         if old:
             old_assertions = sum(len(p.findall(old)) for p in _ASSERTION_PATTERNS)
             new_assertions = sum(len(p.findall(new)) for p in _ASSERTION_PATTERNS)
-            if old_assertions > 0 and new_assertions < old_assertions:
+            drop = old_assertions - new_assertions
+            if old_assertions > 0 and drop >= 2:
                 findings.append({
                     "tier": "dangerous",
                     "kind": "assertion_deletion",

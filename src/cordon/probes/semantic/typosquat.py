@@ -91,6 +91,21 @@ class TyposquatProbe(Probe):
                         "domain": domain,
                     })
 
+        # Inspect shell commands for ``pip install --index-url`` /
+        # ``--extra-index-url`` / ``-i`` pointing at a non-standard mirror.
+        # This is a frequent supply-chain pivot: the package name itself is
+        # legitimate, but it's being fetched from an attacker-controlled
+        # mirror that ships a poisoned wheel under the same name.
+        if action.command:
+            for url in self._extract_index_urls(action.command):
+                domain = self._extract_domain(url)
+                if domain and not self._is_standard_source(domain):
+                    suspects.append({
+                        "type": "non_standard_source",
+                        "url": url,
+                        "domain": domain,
+                    })
+
         if not suspects:
             return ProbeResult(
                 probe=self.name,
@@ -163,6 +178,16 @@ class TyposquatProbe(Probe):
     def _extract_domain(url: str) -> str | None:
         m = re.match(r"https?://([^/]+)", url)
         return m.group(1) if m else None
+
+    # pip flags: --index-url URL, --extra-index-url URL, -i URL.
+    # We accept either a space or '=' between flag and URL.
+    _INDEX_URL_RE = re.compile(
+        r"(?:--(?:extra-)?index-url|-i)(?:\s+|=)(['\"]?)(https?://[^\s'\"]+)\1"
+    )
+
+    @classmethod
+    def _extract_index_urls(cls, command: str) -> list[str]:
+        return [m.group(2) for m in cls._INDEX_URL_RE.finditer(command)]
 
     @staticmethod
     def _is_standard_source(domain: str) -> bool:

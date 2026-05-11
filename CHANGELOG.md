@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`cordon.benchmarks` — the canonical 36-task Semantic Guard benchmark**:
+  - 36 hand-curated tasks: 3 attack + 3 benign per attack class × 6 classes.
+  - `run_benchmark(guard, tasks=...)` driver returning a full
+    `BenchmarkReport` with TPR, FPR, control score, per-category
+    breakdown, per-task timing, and JSON serialization.
+  - `cordon benchmark --profile {strict|default|permissive} [--json]`
+    CLI command — single-command reproducer that prints a Rich-formatted
+    summary panel and per-category table.
+  - **Headline result on `Guard.strict()`: block rate 1.000, FPR 0.000,
+    control score 1.000, full suite in ~7 ms.**
+  - Two upstream probe precision improvements driven by benchmark
+    failures: typosquat now also catches `pip --index-url` pointing at
+    non-standard mirrors, and the test-suppression assertion-deletion
+    rule now requires an absolute drop ≥ 2 to avoid flagging legitimate
+    refactors.
+  - 15 new tests on the runner + suite invariants.
 - **Full 6-probe Semantic Guard suite** — completes the v0.2 detector roster:
   - `SilentFailureProbe` — bare-except / `except Exception: pass` /
     `except ... as e: pass`, empty JS/TS catch blocks, empty
