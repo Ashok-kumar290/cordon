@@ -34,3 +34,8 @@ Thumbs.db
 # Local test artifacts
 /tmp_bench/
 .cordon_cache/
+
+# Local secrets — never commit
+.env
+.env.*
+*.env
