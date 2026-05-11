@@ -4,8 +4,8 @@
 
 Cordon runs deterministic safety probes on a proposed agent action *before* it executes. No LLM calls, no heuristics, no inference latency — just fast, auditable, replayable verdicts on whether an action is safe to run.
 
-- **Live playground:** <https://ashok-kumar290.github.io/cordon/>
-- **Hosted API:**     <https://seyomi-cordon-playground.hf.space/api/docs>
+- **Live playground:** <https://seyomi-cordon-playground.hf.space/>
+- **API docs:**       <https://seyomi-cordon-playground.hf.space/api/docs>
 - **PyPI:**           [`cordon-ai`](https://pypi.org/project/cordon-ai/) · `pip install cordon-ai`
 - **Benchmark:**      1.000 control score on a 36-task public benchmark, 0.2 ms median verdict latency
 
@@ -274,10 +274,10 @@ Cordon is the production-grade descendant of two research projects:
 
 ## Deployment
 
-The repo ships two deployment surfaces for the live playground:
+The repo ships two interchangeable deployment surfaces for the live playground:
 
-- **Static landing page** (`docs/`) — pure HTML/CSS/JS, deployed to GitHub Pages from the `main` branch's `/docs` folder. Enable in *Settings → Pages → Source = `Deploy from a branch`, Branch = `main`, Folder = `/docs`*. Site goes live at <https://ashok-kumar290.github.io/cordon/>.
-- **FastAPI backend** (`web/`) — deployed to a Hugging Face Space via `space/deploy.sh`. Free, Docker-based, public API at `https://<user>-cordon-playground.hf.space`. The static landing page calls this backend cross-origin (CORS is allowlisted for `ashok-kumar290.github.io` and `cordon.ai`).
+- **Hugging Face Space (default)** — single Docker container that serves both the landing page and the API from the same origin. Free, no DNS, no CORS surprises. Deploy with `bash space/deploy.sh <hf-username>`. Public URL: `https://<hf-username>-cordon-playground.hf.space/`.
+- **GitHub Pages + separate API host (optional)** — pure-static landing page in `docs/` plus the FastAPI backend hosted anywhere (Fly, Render, Cloud Run, another HF Space). Only worth setting up if you have a custom domain that GitHub Pages can serve cleanly. Enable in *Settings → Pages → Source = `Deploy from a branch`, Branch = `main`, Folder = `/docs`*.
 
 ```bash
 # One-time: create the Space on https://huggingface.co/new-space

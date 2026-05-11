@@ -60,9 +60,12 @@ cp "$REPO_ROOT/space/README.md"   "$WORK_DIR/README.md"
 cp "$REPO_ROOT/space/Dockerfile"  "$WORK_DIR/Dockerfile"
 
 # The FastAPI app module is the canonical web/app.py — no fork, no
-# duplication. The ``/`` route degrades to a JSON manifest when the
-# templates directory is absent, which it always is in this image.
-cp "$REPO_ROOT/web/app.py" "$WORK_DIR/app.py"
+# duplication. We also ship templates/ and static/ so the same URL
+# serves the marketing landing page AND the playground API.
+cp    "$REPO_ROOT/web/app.py"    "$WORK_DIR/app.py"
+rm -rf "$WORK_DIR/templates" "$WORK_DIR/static"
+cp -r "$REPO_ROOT/web/templates" "$WORK_DIR/templates"
+cp -r "$REPO_ROOT/web/static"    "$WORK_DIR/static"
 
 # .gitattributes so HF doesn't try to LFS-track our small text files.
 cat > "$WORK_DIR/.gitattributes" <<'EOF'

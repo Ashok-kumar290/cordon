@@ -25,12 +25,15 @@ RUN pip install \
         "uvicorn[standard]>=0.27,<1.0" \
         "pydantic>=2.5,<3.0"
 
-# The Space ships the FastAPI app module; templates and static
-# assets are intentionally NOT included because the static landing
-# page lives on GitHub Pages and calls this backend cross-origin.
-# When TEMPLATES_DIR is empty, the canonical app.py at ``/`` falls
-# back to a JSON manifest — see ``web/app.py::index``.
-COPY --chown=app:app app.py /home/app/app.py
+# The Space ships the FastAPI app plus the landing-page templates
+# and static assets, so a single URL serves BOTH the marketing page
+# and the live playground API. This avoids the GitHub Pages
+# custom-domain interaction that happens when the repo owner's user
+# site already has a CNAME and a SPA 404 fallback that swallows
+# project-page paths.
+COPY --chown=app:app app.py             /home/app/app.py
+COPY --chown=app:app templates/         /home/app/templates/
+COPY --chown=app:app static/            /home/app/static/
 
 USER app
 EXPOSE 7860
