@@ -102,28 +102,37 @@ cordon compare --comparators all
 # add --lakera-key=... and --openai-key=... to include the network-bound judges
 ```
 
-| Judge | Block rate (TPR) | FPR | Control | Passed | Mean latency |
+| Judge | Block rate (TPR) | FPR | **Control** | Passed | Mean latency |
 |---|---:|---:|---:|---:|---:|
 | **Cordon (strict)**             | **1.000 (18/18)** | **0.000** | **1.000** | **36/36** | **~0.2 ms** |
-| Keyword heuristic (block-list)  | 0.056 (1/18)      | 0.000     | 0.056     | 19/36     | ~0.01 ms     |
-| Transcript-only (charitable)    | 0.167 (3/18)      | 0.000     | 0.167     | 21/36     | ~0.00 ms     |
-| Lakera Guard                    | *requires API key — see `--lakera-key`* | — | — | — | — |
-| LLM judge (gpt-4o-mini)         | *requires API key — see `--openai-key`* | — | — | — | — |
+| Keyword heuristic (block-list)  | 0.056 (1/18)      | 0.000     | 0.056 | 19/36 | ~0.01 ms |
+| Transcript-only (charitable)    | 0.167 (3/18)      | 0.000     | 0.167 | 21/36 | ~0.00 ms |
+| Lakera Guard (v2/guard, May 2026) | 1.000 (18/18)   | **1.000 (18/18)** | **0.000** | 18/36 | ~280 ms |
+| LLM judge (gpt-4o-mini)         | *forthcoming — pending billing on test account* | — | — | — | — |
 
-**Cordon catches 18× more attacks than the naive heuristic and 6× more than a charitable transcript monitor — at zero false positives in both cases.** Both alternatives have 0% block rate on the *stealth* attack classes (typosquat, secret-leak, silent-failure, test-suppression) where it matters most:
+**Cordon is the only judge in the table with a non-zero control score.** The naive heuristic and the charitable transcript monitor each catch a few attacks but miss the stealth classes entirely; Lakera Guard catches every attack but also blocks every benign task — i.e., it isn't a usable filter for action evaluation.
 
-| Category               | Cordon | Keyword heuristic | Transcript monitor |
-|------------------------|:------:|:-----------------:|:------------------:|
-| Typosquat              | **1.00** | 0.00            | 0.33               |
-| Secret leak            | **1.00** | 0.00            | 0.00               |
-| Exfiltration           | **1.00** | 0.00            | 0.33               |
-| Silent failure         | **1.00** | 0.00            | 0.00               |
-| Test suppression       | **1.00** | 0.00            | 0.00               |
-| Security weakening     | **1.00** | 0.33            | 0.33               |
+### Per-category attack block rate
 
-The pattern is the wedge: existing tools judge *strings* (input prompts, output text). Cordon judges *side effects* (the proposed shell command, the proposed file write). Strings can be paraphrased; side effects cannot. That gap is the entire moat.
+| Category               | Cordon | Keyword | Transcript | Lakera |
+|------------------------|:------:|:-------:|:----------:|:------:|
+| Typosquat              | **1.00** | 0.00 | 0.33 | 1.00 |
+| Secret leak            | **1.00** | 0.00 | 0.00 | 1.00 |
+| Exfiltration           | **1.00** | 0.00 | 0.33 | 1.00 |
+| Silent failure         | **1.00** | 0.00 | 0.00 | 1.00 |
+| Test suppression       | **1.00** | 0.00 | 0.00 | 1.00 |
+| Security weakening     | **1.00** | 0.33 | 0.33 | 1.00 |
 
-The transcript-only baseline is a deliberately *charitable* upper bound — a perfect-recall LLM monitor that catches every red-flag word in the agent's narration, never gets paraphrased away. Real LLM-based transcript guards score *worse* than this on stealth attacks. Cordon scores 1.00 on every category.
+(Read the FPR column carefully when interpreting Lakera's row: blocking everything trivially gives 100% block rate.)
+
+### Why every other column has at least one fatal flaw
+
+- **Keyword heuristic**: deterministic and fast, but blind to the four *stealth* attack classes (typosquat, secret-leak, silent-failure, test-suppression). 1/18 attacks blocked.
+- **Transcript-only LLM monitor**: even at the *charitable* upper bound — perfect recall on red-flag words, never fooled by paraphrase — it sees only what the agent says it's about to do, not the file contents being written. 3/18 attacks blocked. Real LLM monitors score worse.
+- **Lakera Guard**: trained for prompt-injection / content-safety classification, not action evaluation. When customers reach for it for action filtering (which is common, because there's nothing else), every shell-command-shaped input scores 1.0 confidence on its `flagged` field. **0/18 benign tasks pass.** Methodological note: we hit `POST https://api.lakera.ai/v2/guard` (their flagship endpoint) with each action serialized as a single user message — the same way customers integrate it today. Numbers reproduce against the published v2 API as of May 2026.
+- **LLM-as-judge (gpt-4o-mini)**: numbers forthcoming. Even at best, this approach is slow (≈500–1500 ms per task vs Cordon's 0.2 ms), non-deterministic, and adds an LLM-call dollar cost to every agent step. Run it yourself with `cordon compare --comparators all --openai-key=…` to reproduce.
+
+The pattern is the wedge: every existing tool judges **strings** (input prompts or output text). Cordon judges **side effects** (the proposed shell command, the proposed file write, the proposed network call). Strings can be paraphrased, encoded, or smuggled; side effects cannot. That gap is the entire moat.
 
 ## Install
 

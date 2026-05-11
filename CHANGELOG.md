@@ -35,6 +35,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     charitable transcript monitor at zero false positives.
 - 15 new tests on the comparator framework + the API-key-free
   comparators. **150 tests passing total.**
+- **Lakera Guard measured against the live `v2/guard` API
+  (May 2026)**: TPR 1.000, FPR 1.000, control score **0.000**.
+  Lakera flags every shell-command-shaped input with `flagged=true`,
+  confidence 1.0 — including all 18 benign tasks. The headline
+  finding: Cordon is the only judge in the comparison with a
+  non-zero control score.
+- Raw measured run archived at
+  `docs/benchmarks/comparative-2026-05-11.json` (5 comparators,
+  180 task results, full per-task reasons + raw API payloads).
 
 ## [0.2.0] — 2026-05-11
 
