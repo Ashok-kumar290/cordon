@@ -1,7 +1,8 @@
 # Runtime sandboxing — Layer 3 of the Cordon defense stack
 
-Cordon is the **pre-execution** control layer. It catches an agent's
-proposed action before that action runs. There's a complementary class
+Cordon is **the action firewall for AI agents** — it catches an
+agent's proposed action *before* that action runs. There's a
+complementary class
 of attack — described in §3.6 of [`threat-model.md`](threat-model.md)
 — that Cordon explicitly does not catch: an action whose harm is only
 realised when *something else* later executes the file it produced.

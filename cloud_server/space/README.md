@@ -15,8 +15,8 @@ short_description: Cordon Cloud (closed beta) — design-partner access.
 > What did your AI agents *try* to do today, and what stopped them?
 
 This Space is the hosted backend + dashboard for
-[Cordon](https://github.com/Ashok-kumar290/cordon) — the pre-execution
-control layer for AI agents.
+[Cordon](https://github.com/Ashok-kumar290/cordon) — the action firewall
+for AI agents.
 
 **The dashboard at `/` is gated.** Visiting the bare URL returns an
 "Access required" page; design-partner investors and prospects are

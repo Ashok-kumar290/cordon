@@ -5,9 +5,9 @@
 [![Python](https://img.shields.io/pypi/pyversions/cordon-ai.svg)](https://pypi.org/project/cordon-ai/)
 [![License](https://img.shields.io/pypi/l/cordon-ai.svg)](https://github.com/Ashok-kumar290/cordon/blob/main/LICENSE)
 
-**The pre-execution control layer for AI agents.**
+**The action firewall for AI agents.**
 
-Cordon runs deterministic safety probes on a proposed agent action *before* it executes. No LLM calls, no heuristics, no inference latency — just fast, auditable, replayable verdicts on whether an action is safe to run.
+Block what your AI agents shouldn't do — *before* they do it. Cordon runs deterministic safety probes on every proposed agent action and returns an allow / flag / block verdict in under a millisecond. No LLM in the path. No prompts. No inference latency. Same architecture you trust at the network edge, now at the agent edge.
 
 - **Live playground:** <https://seyomi-cordon-playground.hf.space/>
 - **API docs:**        <https://seyomi-cordon-playground.hf.space/api/docs>

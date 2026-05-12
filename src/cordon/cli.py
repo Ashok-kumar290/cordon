@@ -19,7 +19,7 @@ app = typer.Typer(
     name="cordon",
     no_args_is_help=True,
     add_completion=False,
-    help="Pre-execution control for AI agents.",
+    help="The action firewall for AI agents.",
 )
 console = Console()
 

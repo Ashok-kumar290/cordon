@@ -170,7 +170,7 @@ runtime provenance tracking, which is a different category of system
 
 ## 4. The summary line you can quote in pitches
 
-> *"Cordon is the pre-execution control layer. It catches the
+> *"Cordon is the action firewall for AI agents. It catches the
 > agent's action before it leaves the chat completion. For the
 > action-level harm pattern — `rm -rf`, secret leakage, typosquats,
 > exfiltration — it's the right and complete answer. For payloads

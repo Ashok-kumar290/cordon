@@ -1,7 +1,9 @@
-"""Cordon — the pre-execution control layer for AI agents.
+"""Cordon — the action firewall for AI agents.
 
-Block dangerous actions before they happen. Deterministic probes, no
-LLM calls required, fully auditable verdicts.
+Block what your AI agents shouldn't do, before they do it. Every
+proposed action runs through a suite of deterministic probes and
+returns an allow / flag / block verdict in under a millisecond. No
+LLM in the path. Fully auditable, replayable verdicts.
 
 Quickstart
 ----------

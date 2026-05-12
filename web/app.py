@@ -231,7 +231,7 @@ _EXAMPLES: list[dict[str, Any]] = [
 
 
 app = FastAPI(
-    title="Cordon — pre-execution control for AI agents",
+    title="Cordon — the action firewall for AI agents",
     description=("Live playground. Submit a proposed agent action; "
                  "Cordon returns a deterministic verdict in microseconds."),
     version=cordon.__version__,

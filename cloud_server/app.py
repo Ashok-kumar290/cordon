@@ -146,7 +146,7 @@ STORE: EventStore = make_store(_CLOUD_DB_URL)
 app = FastAPI(
     title="Cordon Cloud",
     description=(
-        "Real-time telemetry for pre-execution agent verdicts. "
+        "Real-time telemetry for the action firewall. "
         "Receives events from `cordon.cloud.CloudReporter` and powers "
         "the live dashboard."
     ),
