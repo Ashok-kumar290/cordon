@@ -27,6 +27,7 @@ semantic suite so the existing :meth:`cordon.Guard.strict` /
 them up automatically once they're registered.
 """
 
+from cordon.probes.content.package_manifest import PackageManifestProbe
 from cordon.probes.content.python_ast import PythonASTProbe
 
-__all__ = ["PythonASTProbe"]
+__all__ = ["PackageManifestProbe", "PythonASTProbe"]
