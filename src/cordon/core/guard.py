@@ -140,6 +140,7 @@ class Guard:
         camouflage-attack class (see ``docs/threat-model.md``).
         """
         from cordon.probes.content import (
+            ArchiveInspectorProbe,
             Base64DecoderProbe,
             PackageManifestProbe,
             PythonASTProbe,
@@ -164,6 +165,7 @@ class Guard:
             PythonASTProbe(),
             PackageManifestProbe(),
             Base64DecoderProbe(),
+            ArchiveInspectorProbe(),
         ]
 
     @classmethod
