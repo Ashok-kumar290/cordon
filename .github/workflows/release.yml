@@ -1,0 +1,165 @@
+# Cordon release — build and publish to PyPI on every ``vX.Y.Z`` tag.
+#
+# Triggered by pushing an annotated tag::
+#
+#     git tag -a v0.2.3 -m "release v0.2.3"
+#     git push origin v0.2.3
+#
+# Authentication uses PyPI Trusted Publishing (OIDC), not an API token.
+# To enable it once:
+#
+#   1. Go to https://pypi.org/manage/account/publishing/
+#   2. Add a pending publisher with:
+#        Owner:               Ashok-kumar290
+#        Repository:          cordon
+#        Workflow filename:   release.yml
+#        Environment name:    pypi-release
+#   3. The first successful run of this workflow publishes the package
+#      and "promotes" the pending publisher to a real one.
+#
+# Why no API token: tokens leak, expire, and live in repo secrets where
+# anyone with admin can exfiltrate them. OIDC short-lived credentials
+# are issued by GitHub per-run and only accepted when the workflow's
+# (repo, workflow, environment) identity matches what PyPI expects.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"          # v0.2.3, v1.0.0, ...
+      - "v[0-9]+.[0-9]+.[0-9]+rc[0-9]+"  # v0.2.3rc1 for release candidates
+
+# A release should not race with itself.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ── 1. Validate ───────────────────────────────────────────────────────────
+  #
+  # Run the full test suite + verify that the tag matches the version
+  # declared in pyproject.toml. The version-match check catches the
+  # classic "tagged v0.2.3 but pyproject still says 0.2.2" mistake
+  # before we waste a PyPI release slot on it.
+  validate:
+    name: validate tag matches pyproject
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+
+      - name: Run the test suite
+        run: pytest -q --maxfail=5
+
+      - name: Assert tag matches version in pyproject.toml
+        run: |
+          set -euo pipefail
+          tag_version="${GITHUB_REF_NAME#v}"
+          pp_version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')
+          echo "tag:        $tag_version"
+          echo "pyproject:  $pp_version"
+          if [ "$tag_version" != "$pp_version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match pyproject.toml version $pp_version"
+            exit 1
+          fi
+
+  # ── 2. Build sdist + wheel ────────────────────────────────────────────────
+  #
+  # Build is split from validate so the artifact upload step in publish
+  # can pick the archive up via ``actions/download-artifact``. Build
+  # tools (``build``) are the only thing that runs here — no test deps,
+  # no publish deps. That keeps the artifact reproducible.
+  build:
+    name: build sdist + wheel
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build
+        run: python -m pip install build
+
+      - name: Build
+        run: python -m build
+
+      - name: Smoke-check the wheel imports cleanly
+        # Catch the worst class of release bugs: a renamed module, a
+        # circular import, or a missing package_data entry. Test
+        # against the built wheel in a clean venv, not the editable
+        # checkout.
+        run: |
+          python -m venv /tmp/check-venv
+          /tmp/check-venv/bin/pip install --quiet dist/cordon_ai-*.whl
+          /tmp/check-venv/bin/python -c "
+          import cordon
+          from cordon import Action, Guard, __version__
+          from cordon.policy import parse
+          from cordon.integrations.langchain import (
+              ActionBuilder, GuardedTool, CordonGuardCallback,
+          )
+          print('version:', __version__)
+          # Build a guard with a policy and verify the gate works.
+          g = Guard.from_policy('profile: strict')
+          assert g.check(Action(kind='shell', command='rm -rf /')).decision == 'block'
+          print('smoke ok')
+          "
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  # ── 3. Publish to PyPI via OIDC trusted publishing ────────────────────────
+  publish:
+    name: publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi-release
+      url: https://pypi.org/project/cordon-ai/
+    permissions:
+      # Required for the OIDC token PyPI verifies against the trusted-
+      # publisher config. ``contents: write`` is for the GitHub
+      # release attached at the end of the run.
+      id-token: write
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # No ``password:`` field — the action uses the OIDC token.
+          verbose: true
+          skip-existing: false
+
+      # ── 4. Attach a GitHub Release with the dist artifacts ────────────────
+      # Operators (and PyPI's "Show download stats" UI) point at the
+      # GitHub Release for the sdist; missing it breaks ``pip install
+      # --no-binary :all:`` chains that some enterprises require.
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true

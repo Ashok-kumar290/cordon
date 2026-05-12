@@ -1,0 +1,115 @@
+# Cordon CI — run the full test suite on every push and PR.
+#
+# Matrix: Python 3.10 / 3.11 / 3.12. We pin 3.10 as the floor because
+# pyproject.toml advertises `requires-python = ">=3.10"` and we don't
+# want releases to silently break on the oldest supported runtime.
+#
+# Tests are split into two jobs:
+#
+#   - ``unit`` — the 300+ pure-Python tests that run against in-memory
+#     stores and the bundled probes. Fast, must pass on every push.
+#
+#   - ``postgres`` — the storage contract tests that exercise the
+#     PostgresEventStore against a real Postgres 16 service container.
+#     Catches schema drift between the SQLite and Postgres adapters,
+#     which the SQLite-only run cannot see.
+#
+# Both jobs share the same actions; the postgres job adds a service
+# container and exports CORDON_CLOUD_POSTGRES_TEST_URL so the storage
+# tests un-skip themselves.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Single in-flight run per branch — cancel older queued runs on every push.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: unit (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      # Install the package in editable mode plus the dev extras so
+      # pytest, pytest-cov, ruff, mypy resolve. ``-e`` keeps tracebacks
+      # pointing at the source tree.
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+
+      - name: Lint (ruff)
+        run: ruff check src/ tests/
+        continue-on-error: true   # advisory until we're warning-clean
+
+      - name: Run tests
+        # ``-x`` would fail-fast; we want a full report so we can see
+        # how bad a regression is. ``--maxfail=5`` is a sane middle.
+        run: pytest -q --maxfail=5
+
+  postgres:
+    name: postgres storage contract tests
+    runs-on: ubuntu-latest
+
+    # Postgres 16 is the version Neon defaults to and the version our
+    # PostgresEventStore is exercised against in production. Pin
+    # explicitly so a new major version landing on the runner doesn't
+    # quietly break us.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER:     cordon
+          POSTGRES_PASSWORD: cordon
+          POSTGRES_DB:       cordon_test
+        ports:
+          - 5432:5432
+        # GH-Actions service containers don't have a real healthcheck
+        # by default — set one so the runner waits until psql is ready.
+        options: >-
+          --health-cmd="pg_isready -U cordon -d cordon_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install (with cloud-postgres extra)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev,cloud-postgres]
+
+      - name: Run storage contract tests against Postgres
+        env:
+          CORDON_CLOUD_POSTGRES_TEST_URL: postgresql://cordon:cordon@localhost:5432/cordon_test
+        # Just the storage tests. The full suite re-runs in ``unit`` —
+        # no point duplicating it here.
+        run: pytest tests/test_storage.py -q
