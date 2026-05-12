@@ -183,11 +183,61 @@ class Guard:
             name="permissive",
         )
 
+    @classmethod
+    def from_policy(cls, text: str) -> Guard:
+        """Build a Guard from a policy DSL document.
+
+        The text must start with ``profile: strict|default|permissive``
+        followed by zero or more override rules. See
+        :mod:`cordon.policy` for the full grammar.
+
+        Example::
+
+            guard = Guard.from_policy('''
+                profile: strict
+
+                allow when command_starts_with: "rm -rf node_modules"
+                allow when command_starts_with: "rm -rf ./build"
+                flag  when probe: typosquat
+            ''')
+
+        Raises:
+            cordon.policy.PolicyParseError: on any syntactic or semantic
+                problem in the policy document.
+        """
+        # Late import to keep the policy module out of the core import
+        # path — anyone who only uses Guard.strict() pays nothing for
+        # the parser code.
+        from cordon.policy import parse
+
+        policy = parse(text)
+        base = {
+            "strict":     cls.strict,
+            "default":    cls.default,
+            "permissive": cls.permissive,
+        }[policy.profile]()
+        # Stash the policy on the instance; ``check`` applies it after
+        # probes run. Attached as a private attribute so equality and
+        # repr stay unaffected for the typical no-policy case.
+        base._policy = policy   # type: ignore[attr-defined]
+        base.name = f"{policy.profile}+policy"
+        return base
+
     # ─── Main API ─────────────────────────────────────────────────────────────
 
     def check(self, action: Action) -> Verdict:
-        """Run all probes against ``action`` and return the aggregated verdict."""
+        """Run all probes against ``action`` and return the aggregated verdict.
+
+        If a policy was attached via :meth:`from_policy`, every verdict
+        passes through :func:`cordon.policy.apply_policy` before being
+        emitted to listeners, so override rules also reach the cloud
+        dashboard.
+        """
         verdict = self._compute_verdict(action)
+        policy = getattr(self, "_policy", None)
+        if policy is not None:
+            from cordon.policy import apply_policy
+            verdict = apply_policy(policy, action, verdict)
         self._notify_listeners(action, verdict)
         return verdict
 
