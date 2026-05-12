@@ -52,7 +52,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from cloud_server.storage import EventStore
+from cloud_server.storage import EventStore, make_store
 
 
 # ─── Config ────────────────────────────────────────────────────────────────────
@@ -62,9 +62,14 @@ SERVER_DIR = Path(__file__).parent
 TEMPLATES_DIR = SERVER_DIR / "templates"
 STATIC_DIR = SERVER_DIR / "static"
 
-DB_PATH = os.environ.get(
-    "CORDON_CLOUD_DB",
-    str(SERVER_DIR / "cordon_cloud.db"),
+# ``CORDON_CLOUD_DB`` selects the backend transparently:
+#   * unset / empty / plain path  → sqlite (default)
+#   * ``sqlite:///path/file.db``    → sqlite
+#   * ``postgresql://user:pw@...``  → postgres (see
+#     cloud_server/RUNBOOK.md for the Neon setup)
+# The bare default keeps the Space's zero-config story.
+_CLOUD_DB_URL = os.environ.get("CORDON_CLOUD_DB", "").strip() or str(
+    SERVER_DIR / "cordon_cloud.db"
 )
 
 # Map of ingest API keys → project IDs.
@@ -103,7 +108,7 @@ _SEED_DEMO      = os.environ.get("CORDON_CLOUD_SEED_DEMO", "1") not in {"0", "fa
 class IngestEvent(BaseModel):
     """Tolerant on input — every field optional except the few the
     storage layer requires. Validation lives in
-    :meth:`EventStore.insert_batch`."""
+    :meth:`SqliteEventStore.insert_batch` / :meth:`PostgresEventStore.insert_batch`."""
 
     ts:              float | None = None
     action_id:       str | None   = None
@@ -136,7 +141,7 @@ class IngestResponse(BaseModel):
 # ─── App ───────────────────────────────────────────────────────────────────────
 
 
-STORE = EventStore(DB_PATH)
+STORE: EventStore = make_store(_CLOUD_DB_URL)
 
 app = FastAPI(
     title="Cordon Cloud",
@@ -284,6 +289,56 @@ _ACCESS_REQUIRED_HTML = """\
 
 @app.get("/", include_in_schema=False)
 def index(request: Request) -> Any:
+    """Landing page for the general public.
+
+    Dashboard access (gated by ``CORDON_CLOUD_DASHBOARD_TOKEN``) was
+    previously the bare ``/`` route, which meant the only thing a
+    stranger saw was an "access required" wall — terrible first
+    impression for a product pitch.
+
+    New behavior:
+
+    * ``GET /``           → public landing page (with a live probe-try widget)
+    * ``GET /dashboard``  → token-gated operator dashboard (the old ``/`` UI)
+    * ``GET /?t=<token>`` → dashboard, for backward compatibility with
+                             magic links we've already mailed out
+
+    Both surfaces are served from this app; only the operator
+    dashboard hits the gated read-only JSON API.
+    """
+    # Magic-link compatibility: ?t=<token> keeps routing to the dashboard.
+    if request.query_params.get("t"):
+        return _serve_dashboard(request)
+
+    landing = TEMPLATES_DIR / "landing.html"
+    if landing.exists():
+        html = landing.read_text(encoding="utf-8").replace("__VERSION__", app.version)
+        return HTMLResponse(html)
+
+    # Fall back to JSON manifest if the template wasn't copied for
+    # some reason (e.g. stripped-down local dev install).
+    return JSONResponse(
+        {
+            "service": "cordon-cloud",
+            "version": app.version,
+            "endpoints": [
+                "POST /v1/ingest",
+                "POST /v1/try",
+                "GET  /v1/events",
+                "GET  /v1/events/{id}",
+                "GET  /v1/metrics",
+            ],
+        }
+    )
+
+
+@app.get("/dashboard", include_in_schema=False)
+def dashboard(request: Request) -> Any:
+    """Operator dashboard — gated by ``CORDON_CLOUD_DASHBOARD_TOKEN``."""
+    return _serve_dashboard(request)
+
+
+def _serve_dashboard(request: Request) -> Any:
     page = TEMPLATES_DIR / "dashboard.html"
     if not _has_dashboard_access(request):
         return HTMLResponse(
@@ -292,7 +347,6 @@ def index(request: Request) -> Any:
         )
     if page.exists():
         return FileResponse(page)
-    # No template AND access granted — fall back to JSON manifest.
     return JSONResponse(
         {
             "service": "cordon-cloud",
@@ -341,6 +395,117 @@ def ingest(
         [e.model_dump() for e in payload.events],
     )
     return IngestResponse(accepted=written)
+
+
+# ─── Public probe-try endpoint (powers the landing-page widget) ───────────────
+
+
+class TryRequest(BaseModel):
+    """Public-facing input for ``POST /v1/try``.
+
+    Kept deliberately small so the surface stays clearly demo-only;
+    the real SDK exposes the full :class:`cordon.Action` shape.
+    """
+    kind: str = Field(default="shell", description="'shell' or 'write_file'")
+    command: str | None = Field(default=None, max_length=4096)
+    changes: dict[str, str] | None = Field(default=None)
+    profile: str = Field(default="strict", description="'strict' | 'default' | 'permissive'")
+
+
+_TRY_RL_WINDOW_S = 60.0
+_TRY_RL_LIMIT    = 30
+_try_rl_state: dict[str, list[float]] = {}
+_try_rl_lock     = threading.Lock()
+
+
+def _try_rate_limit(request: Request) -> None:
+    """Lightweight per-IP rate limit on the public try endpoint.
+
+    No fancy redis, no per-tenant quotas — this is a public demo
+    surface, the only thing we're defending against is a script-kiddie
+    DoS attempt. 30 checks per minute per IP is plenty for any real
+    user touring the landing page.
+    """
+    ip = (
+        request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+        or (request.client.host if request.client else "unknown")
+    )
+    now = time.time()
+    with _try_rl_lock:
+        bucket = _try_rl_state.setdefault(ip, [])
+        cutoff = now - _TRY_RL_WINDOW_S
+        bucket[:] = [t for t in bucket if t > cutoff]
+        if len(bucket) >= _TRY_RL_LIMIT:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    f"rate limit: {_TRY_RL_LIMIT} checks per minute per IP. "
+                    "pip install cordon-ai and run unlimited locally."
+                ),
+            )
+        bucket.append(now)
+
+
+@app.post("/v1/try")
+def try_probe(payload: TryRequest, request: Request) -> dict[str, Any]:
+    """Run a single Cordon probe-check against a user-supplied action.
+
+    Public, rate-limited. Powers the live "Try a probe right now"
+    widget on the landing page. The SDK is imported lazily so the
+    health-check path (``GET /healthz``) doesn't pay the import cost
+    on every cold start.
+    """
+    _try_rate_limit(request)
+
+    # Lazy import: the SDK pulls in pydantic + regex tables. Keep it
+    # off the hot startup path; the first try-call eats the cost.
+    try:
+        from cordon import Action, Guard
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"cordon SDK not installed in this Space: {exc}",
+        ) from exc
+
+    profile = (payload.profile or "strict").lower()
+    if profile == "strict":
+        guard = Guard.strict()
+    elif profile == "permissive":
+        guard = Guard.permissive()
+    else:
+        guard = Guard.default()
+
+    # Map the request to an Action. Bound by Pydantic's max_length so
+    # we don't accept arbitrarily large payloads on a public endpoint.
+    action = Action(
+        kind=payload.kind or "shell",
+        command=payload.command,
+        changes=payload.changes or {},
+    )
+
+    started = time.perf_counter()
+    verdict = guard.check(action)
+    duration_ms = (time.perf_counter() - started) * 1000.0
+
+    triggered = list(verdict.probes_triggered)[:6]
+    return {
+        "decision":         verdict.decision,
+        "blocked":          bool(verdict.blocked),
+        "suspicion_score":  round(float(verdict.suspicion_score), 4),
+        "summary":          verdict.explanation or (verdict.top_reason() or "no probe triggered"),
+        "duration_ms":      round(duration_ms, 3),
+        "profile":          profile,
+        "probes": [
+            {
+                "probe":      p.probe,
+                "severity":   str(getattr(p.severity, "value", p.severity)).lower(),
+                "confidence": round(float(p.confidence), 4),
+                "evidence":   (p.evidence or "")[:400],
+            }
+            for p in triggered
+        ],
+        "n_probes_total": len(verdict.all_probes),
+    }
 
 
 @app.get("/v1/events")

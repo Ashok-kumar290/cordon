@@ -12,6 +12,11 @@
 # The Space's $HOME is writable for user 1000, so the sqlite db lives at
 # /home/app/data/cordon_cloud.db. Note that this filesystem is ephemeral:
 # on every container rebuild the db is reset and the startup seed runs.
+#
+# For persistence across rebuilds set the ``CORDON_CLOUD_DB`` Space
+# secret to a ``postgresql://...`` URL (Neon free tier is the
+# documented path). The image ships with psycopg pre-installed so no
+# Dockerfile changes are needed when flipping the backend.
 
 FROM python:3.11-slim
 
@@ -28,7 +33,9 @@ WORKDIR /home/app
 RUN pip install \
         "fastapi>=0.110,<1.0" \
         "uvicorn[standard]>=0.27,<1.0" \
-        "pydantic>=2.5,<3.0"
+        "pydantic>=2.5,<3.0" \
+        "psycopg[binary,pool]>=3.2,<4.0" \
+        "cordon-ai==0.2.1"
 
 # Lay the Python module out as ``cloud_server`` so the imports in
 # ``app.py`` (``from cloud_server.storage import EventStore``) resolve

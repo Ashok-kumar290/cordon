@@ -184,3 +184,23 @@ echo "open http://127.0.0.1:7860/?t=$CORDON_CLOUD_DASHBOARD_TOKEN"
 ```
 
 Run `examples/cloud_reporter.py` against it to populate live events.
+The example reads `CORDON_API_KEY` from the environment; export
+`cdn_local` (the ingest key you just configured) before running.
+
+## On the `cdn_demo` ingest key
+
+Prior to the 2026-05-12 audit, `cloud_server/app.py` exposed a public
+`cdn_demo` ingest key (controlled by `CORDON_CLOUD_ALLOW_DEMO_KEY`)
+so the example script worked with zero configuration. We've now
+removed that requirement from the example — it errors out cleanly
+with `"set CORDON_API_KEY=..."` if no key is configured, and the
+`CloudReporter` SDK verifies credentials synchronously on init so a
+typoed key surfaces immediately instead of silently dropping events.
+
+The `cdn_demo` fallback in `app.py` remains, but only kicks in when
+`CORDON_CLOUD_INGEST_KEYS` is *unset* (i.e. local development). In
+production we always set `CORDON_CLOUD_INGEST_KEYS`, so the demo key
+is effectively off. If you want a publicly-usable demo key on the
+hosted Space again, the right pattern is to make the demo key
+*additive* (always-on alongside real keys) and rate-limit the demo
+project — not a binary fallback.

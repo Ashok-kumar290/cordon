@@ -8,7 +8,7 @@ A single FastAPI app that serves:
   ``Guard`` against a user-submitted Action and returns the verdict.
 * ``GET /api/examples``    — pre-built showcase actions for the
   playground.
-* ``GET /api/benchmark``   — the canonical 36-task benchmark numbers,
+* ``GET /api/benchmark``   — the canonical 42-task benchmark numbers,
   cached at startup, used to render the comparison table.
 
 This is a *demo surface*, not a security boundary. It's deliberately

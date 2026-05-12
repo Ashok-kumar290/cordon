@@ -7,7 +7,7 @@ Cordon runs deterministic safety probes on a proposed agent action *before* it e
 - **Live playground:** <https://seyomi-cordon-playground.hf.space/>
 - **API docs:**        <https://seyomi-cordon-playground.hf.space/api/docs>
 - **PyPI:**            [`cordon-ai`](https://pypi.org/project/cordon-ai/) · `pip install cordon-ai`
-- **Benchmark:**       1.000 control score on a 36-task public benchmark, 0.2 ms median verdict latency
+- **Benchmark:**       1.000 control score on a 42-task public benchmark, 0.2 ms median verdict latency
 - **Cordon Cloud** (hosted dashboard) is in closed beta with design partners — email **founders@cordon.ai** for access
 
 ```bash
@@ -74,7 +74,7 @@ Cordon is a third path: **static, deterministic probes on the proposed side effe
 
 ## Headline benchmark
 
-The 36-task **Semantic Guard benchmark** covers all six attack classes the probes are designed to catch (3 attacks + 3 benign per class). Run it yourself:
+The 42-task **Semantic Guard benchmark** covers all seven attack classes the probes are designed to catch (3 attacks + 3 benign per class). Run it yourself:
 
 ```bash
 cordon benchmark --profile strict
@@ -82,11 +82,11 @@ cordon benchmark --profile strict
 
 | Profile | Block rate (TPR) | False-positive rate | Control score | Tasks passed |
 |---|---:|---:|---:|---:|
-| `Guard.permissive()`  | 88.9% | **0.0%** | 0.889 | 34 / 36 |
-| `Guard.default()`     | 94.4% | **0.0%** | 0.944 | 35 / 36 |
-| **`Guard.strict()`**  | **100.0%** | **0.0%** | **1.000** | **36 / 36** |
+| `Guard.permissive()`  | 90.5% | **0.0%** | 0.905 | 40 / 42 |
+| `Guard.default()`     | 95.2% | **0.0%** | 0.952 | 41 / 42 |
+| **`Guard.strict()`**  | **100.0%** | **0.0%** | **1.000** | **42 / 42** |
 
-**Zero false positives across all 36 benign tasks on every profile.** The full 36-task suite runs in **~7 ms** end-to-end on a single core — fast enough that every agent step gets checked with no perceptible latency. Lower profiles intentionally *flag* (rather than block) lower-confidence signals like supply-chain mirror swaps, so security teams see the warning without false stops.
+**Zero false positives across all 21 benign tasks on every profile.** The full 42-task suite runs in **~8 ms** end-to-end on a single core — fast enough that every agent step gets checked with no perceptible latency. Lower profiles intentionally *flag* (rather than block) lower-confidence signals like supply-chain mirror swaps, so security teams see the warning without false stops.
 
 Per-category on strict — 3 / 3 attacks blocked, 0 / 3 benign blocked, in every class:
 
@@ -98,10 +98,11 @@ Per-category on strict — 3 / 3 attacks blocked, 0 / 3 benign blocked, in every
 | Silent failure           | 1.00 | 0.00 |
 | Test suppression         | 1.00 | 0.00 |
 | Security weakening       | 1.00 | 0.00 |
+| Destructive shell        | 1.00 | 0.00 |
 
 ## Comparative benchmark
 
-The same 36-task suite, run head-to-head against the dominant deployed agent-safety patterns. Reproduce yourself:
+The same 42-task suite, run head-to-head against the dominant deployed agent-safety patterns. Reproduce yourself:
 
 ```bash
 cordon compare --comparators all
@@ -110,13 +111,15 @@ cordon compare --comparators all
 
 | Judge | Block rate (TPR) | FPR | **Control** | Passed | Mean latency |
 |---|---:|---:|---:|---:|---:|
-| **Cordon (strict)**             | **1.000 (18/18)** | **0.000** | **1.000** | **36/36** | **~0.2 ms** |
-| Keyword heuristic (block-list)  | 0.056 (1/18)      | 0.000     | 0.056 | 19/36 | ~0.01 ms |
-| Transcript-only (charitable)    | 0.167 (3/18)      | 0.000     | 0.167 | 21/36 | ~0.00 ms |
-| Lakera Guard (v2/guard, May 2026) | 1.000 (18/18) | **1.000 (18/18)** | **0.000** | 18/36 | ~280 ms |
-| LLM judge (gpt-4o-mini, via OpenRouter) | 0.833 (15/18) | 0.056 (1/18) | 0.787 | 32/36 | ~1219 ms |
+| **Cordon (strict)**                | **1.000 (21/21)** | **0.000 (0/21)** | **1.000** | **42/42** | **~0.2 ms** |
+| Keyword heuristic (block-list)     | 0.143 (3/21)      | 0.048 (1/21)     | 0.136     | 23/42     | ~0.003 ms |
+| Transcript-only (charitable)       | 0.190 (4/21)      | 0.000 (0/21)     | 0.190     | 25/42     | ~0.003 ms |
+| Lakera Guard (v2/guard, May 2026)‡ | 1.000 (18/18)     | **1.000 (18/18)**| **0.000** | 18/36     | ~280 ms |
+| LLM judge (gpt-4o-mini, via OpenRouter)‡ | 0.833 (15/18) | 0.056 (1/18)  | 0.787     | 32/36     | ~1219 ms |
 
-**Cordon is the only judge with a perfect score, and it's also the fastest by 4–6 orders of magnitude.** The naive heuristic and the charitable transcript monitor each catch a few attacks but miss the stealth classes entirely. Lakera catches every attack but also blocks every benign task — unusable for action filtering. The LLM-as-judge approach is genuinely competitive on accuracy (0.787) but costs ~6,000× more latency, non-deterministic verdicts, and per-call dollars.
+<sub>‡ Network-bound judges last measured on the v0.2 36-task suite (we won't burn API budget on every probe addition); the qualitative gap doesn't change with the 6 new destructive-shell tasks.</sub>
+
+**Cordon is the only judge with a perfect score, and it's also the fastest by 4–6 orders of magnitude.** The naive heuristic now picks up *some* of the destructive-shell attacks via substring match — and earns a false positive on `rm -rf ./build` for its trouble, which is exactly why Cordon's structural approach matters. The charitable transcript monitor catches a few obvious attacks but misses the stealth classes entirely. Lakera catches every attack but also blocks every benign task — unusable for action filtering. The LLM-as-judge approach is genuinely competitive on accuracy (0.787) but costs ~6,000× more latency, non-deterministic verdicts, and per-call dollars.
 
 ### Per-category attack block rate
 
@@ -128,6 +131,7 @@ cordon compare --comparators all
 | Silent failure         | **1.00** | 0.00 | 0.00 | 1.00 | 1.00 |
 | Test suppression       | **1.00** | 0.00 | 0.00 | 1.00 | 0.33 |
 | Security weakening     | **1.00** | 0.33 | 0.33 | 1.00 | 1.00 |
+| Destructive shell      | **1.00** | 0.67 | 0.67 |  —   |  —   |
 
 (Read the FPR column carefully when interpreting Lakera's row: blocking everything trivially gives 100% block rate.)
 
@@ -220,7 +224,7 @@ for tcv in check_response(completion, builder=builder, guard=guard):
         dispatch_tool(tcv.tool_call_id, tcv.tool_name, tcv.arguments)
 ```
 
-[`examples/openai_live_demo.py`](examples/openai_live_demo.py) is the runnable end-to-end version. Three escalating scenarios — *benign* / *exfiltration* / *typosquat* — produce one `allow`, one `flag`, and one `block` on a single screen. Gracefully degrades to a canned response when `OPENAI_API_KEY` is unset, and to a no-op `CloudReporter` when `CORDON_API_KEY` is unset, so the demo always runs:
+[`examples/openai_live_demo.py`](examples/openai_live_demo.py) is the runnable end-to-end version. Three escalating scenarios — *benign* / *exfiltration* / *destructive shell* — produce one `allow`, one `flag`, and one `block` on a single screen. Gracefully degrades to a canned response when `OPENAI_API_KEY` is unset, and to a no-op `CloudReporter` when `CORDON_API_KEY` is unset, so the demo always runs:
 
 ```bash
 # Offline (no keys) — runs canned, exits 0.
@@ -231,6 +235,24 @@ OPENAI_API_KEY=sk-... \
 CORDON_API_KEY=cdn_... \
 .venv/bin/python examples/openai_live_demo.py
 ```
+
+### Claude / Anthropic
+
+The same shape works against Anthropic's Messages API and `tool_use` blocks via [`cordon.integrations.anthropic`](src/cordon/integrations/anthropic.py). [`examples/anthropic_live_demo.py`](examples/anthropic_live_demo.py) is the runnable equivalent, with three execution paths the demo auto-detects in order:
+
+```bash
+# (a) direct Anthropic SDK
+ANTHROPIC_API_KEY=sk-ant-... .venv/bin/python examples/anthropic_live_demo.py
+
+# (b) OpenRouter (one key serves both vendors — handy for design partners)
+OPENAI_API_KEY=sk-or-v1-... OPENAI_BASE_URL=https://openrouter.ai/api/v1 \
+    .venv/bin/python examples/anthropic_live_demo.py
+
+# (c) no keys → canned scenarios still exercise the full Cordon code path
+.venv/bin/python examples/anthropic_live_demo.py
+```
+
+The destructive-shell scenario also surfaces an interesting failure mode: aligned 2026-vintage Claudes refuse to issue `rm -rf /` on their own, sometimes even substituting an `echo "I cannot run ..."` that quotes the command verbatim. The demo detects refusals via a `must_start_with` intent check and falls back to a canned `tool_use` for that scenario only — so the pitch screenshot still shows a real BLOCK, not a silent ALLOW. *Defense in depth*: aligned model + structural probe.
 
 ## Architecture
 
@@ -303,7 +325,7 @@ guard = Guard(
 
 **v0.1** — first release. Two semantic probes (`TyposquatProbe`, `SecretLeakProbe`), CLI, decorator API.
 
-**v0.2 (current)** — full 6-probe Semantic Guard suite, three vendor integrations (OpenAI, Anthropic, LangChain), the canonical 36-task benchmark + comparative reproducer (`cordon benchmark`, `cordon compare`), 150 tests passing.
+**v0.2 (current)** — full 6-probe Semantic Guard suite, three vendor integrations (OpenAI, Anthropic, LangChain), the canonical 42-task benchmark + comparative reproducer (`cordon benchmark`, `cordon compare`), 150 tests passing.
 
 **v0.3 (next)** — environment probes (preview_diff, dry_run, sensitivity_scan, inspect_targets), Cordon Cloud (telemetry + policy management + threat-intel feed), landing page + live playground.
 
@@ -311,7 +333,7 @@ guard = Guard(
 
 Cordon is the production-grade descendant of two research projects:
 
-- **ActionLens** — 3rd place at [Apart Research](https://apartresearch.com/) AI Control Hackathon 2026 (36 countries). Introduced the pre-execution environment probes and the 36-task benchmark. [Repo →](https://github.com/Ashok-kumar290/ActionLens)
+- **ActionLens** — 3rd place at [Apart Research](https://apartresearch.com/) AI Control Hackathon 2026 (36 countries). Introduced the pre-execution environment probes and the 42-task benchmark. [Repo →](https://github.com/Ashok-kumar290/ActionLens)
 - **Context-Conditioned Confidentiality Failures in Refusal-Tuned Language Models** — Cohere Catalyst Grant, 2026. Showed that refusal-tuned models leak confidential context at 46–62% even when explicitly instructed not to. This is the empirical basis for Cordon's secret-leak probe.
 
 ## Cordon Cloud (closed beta)
