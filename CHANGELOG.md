@@ -7,6 +7,103 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] — 2026-05-12
+
+The **per-tenant policy** release. Customers consistently asked the
+same thing: *"strict blocks something we genuinely need
+(e.g. `rm -rf node_modules` in our CI image build) — give us a way
+to carve out a narrow exception without dropping the whole profile
+to permissive."* This release ships exactly that.
+
+### Added — `cordon.policy` DSL
+
+```python
+from cordon import Guard
+
+guard = Guard.from_policy("""
+    profile: strict
+
+    # Real-world carve-outs our agents actually need:
+    allow when command_starts_with: "rm -rf node_modules"
+    allow when command_starts_with: "rm -rf ./build"
+
+    # Promote a known-risky pattern to a hard block:
+    block when path_starts_with: "/etc/" and kind: file
+
+    # Downgrade a noisy probe to flag-only:
+    flag when probe: typosquat
+""")
+
+verdict = guard.check(action)
+```
+
+* `Guard.from_policy(text)` — new classmethod, the typical entry point.
+* `cordon.policy.parse(text) -> Policy` — exposed for advanced use
+  (e.g. validating policies in your own CI before deploying).
+* `cordon.policy.apply_policy(policy, action, verdict) -> Verdict` —
+  the lower-level mutator, useful for testing or for composing
+  policies with custom Guards.
+* `cordon.policy.PolicyParseError` carries `line` + `snippet` for
+  editor-grade error messages.
+
+The verdict's probe trail is **never** mutated — operators looking at
+the dashboard still see *why* the base profile fired, even when a
+policy rule overrode the final decision. The `Verdict.explanation`
+string gets a trailing `; policy line N → action when ...` annotation
+so audit reviewers can trace decisions back to the exact rule.
+
+### Added — Cloud control plane
+
+* `GET    /v1/policies/{project}` — read the saved policy.
+* `PUT    /v1/policies/{project}` — upsert; validates the DSL before
+  storing, returns 400 with `{line, snippet}` on syntax errors.
+* `DELETE /v1/policies/{project}` — remove the policy (agents fall
+  back to whichever profile they were constructed with).
+* `POST   /v1/policies/validate` — public, no auth, no persistence.
+  Drives the live syntax check in the dashboard editor.
+* `POST   /v1/try` — extended with an optional `policy` field so the
+  editor's *try-it* panel can run the draft against a sample action
+  without saving.
+
+Control-plane writes (PUT/DELETE) are gated by the dashboard token
+rather than the ingest key. Writing a policy is a security action,
+not a telemetry action, so the SDK's credentials never need to
+reach it.
+
+Storage: new `policies` table on both backends (SQLite and Postgres).
+Monotonic `version` column so the editor can detect lost updates.
+
+### Added — Dashboard UI
+
+The `/dashboard` page grows a **Project policy** section anchored at
+`#policies` and linked from the header nav. Vanilla JS, no framework:
+
+* Two-column layout — textarea editor on the left, *Try this policy*
+  panel on the right (kind + command input → POST `/v1/try`, results
+  rendered as a decision badge + per-probe evidence).
+* Live validation: 500 ms debounce on input, one validate round-trip
+  per typing pause.
+* Status line under the editor shows `line N: <message>` for syntax
+  errors in the same vocabulary the API returns.
+* `validate` · `save` · `revert` · `delete` actions. Save and Revert
+  dim when the buffer is clean.
+
+### Tests
+
+Suite: 246 → **314 passing** (+68).
+
+* `tests/policy/test_parser.py` — 33 tests covering grammar happy
+  paths, error shapes, quote-aware tokenisation, and dataclass
+  invariants.
+* `tests/policy/test_runtime.py` — 17 tests pinning predicate
+  semantics, rule-AND matching, and `Guard.from_policy()` end-to-end
+  against real probes.
+* `tests/test_storage.py` — 5 new contract tests for policy storage,
+  parametrised over SQLite + Postgres.
+* `tests/test_cloud_server_policies.py` — 13 HTTP tests for the new
+  REST surface, the dashboard-token gate, and the error-with-line
+  response shape.
+
 ## [0.2.1] — 2026-05-12
 
 The pitch-readiness release. Closes every P0 from the 2026-05-12

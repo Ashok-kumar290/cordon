@@ -254,6 +254,37 @@ OPENAI_API_KEY=sk-or-v1-... OPENAI_BASE_URL=https://openrouter.ai/api/v1 \
 
 The destructive-shell scenario also surfaces an interesting failure mode: aligned 2026-vintage Claudes refuse to issue `rm -rf /` on their own, sometimes even substituting an `echo "I cannot run ..."` that quotes the command verbatim. The demo detects refusals via a `must_start_with` intent check and falls back to a canned `tool_use` for that scenario only — so the pitch screenshot still shows a real BLOCK, not a silent ALLOW. *Defense in depth*: aligned model + structural probe.
 
+### Per-tenant policies (`Guard.from_policy`, v0.2.2+)
+
+The three default profiles (`strict` / `default` / `permissive`) cover ~80% of cases. For the rest, write a tiny policy document that takes `strict` as a base and carves out the narrow exceptions your agents genuinely need:
+
+```python
+from cordon import Action, Guard
+
+guard = Guard.from_policy("""
+    profile: strict
+
+    # Carve out a real-world need our CI image build has:
+    allow when command_starts_with: "rm -rf node_modules"
+    allow when command_starts_with: "rm -rf ./build"
+
+    # Promote a known-risky pattern to a hard block:
+    block when path_starts_with: "/etc/" and kind: file
+
+    # Downgrade a noisy probe to flag-only:
+    flag when probe: typosquat
+""")
+
+guard.check(Action(kind="shell", command="rm -rf node_modules")).decision
+# → 'allow'   (carve-out applied)
+guard.check(Action(kind="shell", command="rm -rf --no-preserve-root /")).decision
+# → 'block'   (no rule matched; strict base wins)
+```
+
+Rules apply top-to-bottom; the first match wins. The probe trail is preserved verbatim so dashboard audits still show *why* the base profile fired — the `Verdict.explanation` gets a `; policy line N → allow when ...` trailer so reviewers can trace any decision back to its source rule.
+
+The cloud dashboard ships an editor for the same DSL — see *Cordon Cloud* below — with live syntax validation, a "try this policy" panel that runs the draft against an action without saving, and per-project storage. Syntax errors carry line numbers (`PolicyParseError`) and reach the editor as `{line, snippet}` so the dashboard can underline the bad row.
+
 ## Architecture
 
 ```

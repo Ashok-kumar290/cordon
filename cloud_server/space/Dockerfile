@@ -35,7 +35,7 @@ RUN pip install \
         "uvicorn[standard]>=0.27,<1.0" \
         "pydantic>=2.5,<3.0" \
         "psycopg[binary,pool]>=3.2,<4.0" \
-        "cordon-ai==0.2.1"
+        "cordon-ai==0.2.2"
 
 # Lay the Python module out as ``cloud_server`` so the imports in
 # ``app.py`` (``from cloud_server.storage import EventStore``) resolve
