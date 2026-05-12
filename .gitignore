@@ -40,3 +40,8 @@ Thumbs.db
 .env.*
 *.env
 generated-page.html
+
+# Cordon Cloud local data
+cordon_cloud.db
+cordon_cloud.db-*
+*.sqlite3

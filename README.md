@@ -5,9 +5,10 @@
 Cordon runs deterministic safety probes on a proposed agent action *before* it executes. No LLM calls, no heuristics, no inference latency — just fast, auditable, replayable verdicts on whether an action is safe to run.
 
 - **Live playground:** <https://seyomi-cordon-playground.hf.space/>
-- **API docs:**       <https://seyomi-cordon-playground.hf.space/api/docs>
-- **PyPI:**           [`cordon-ai`](https://pypi.org/project/cordon-ai/) · `pip install cordon-ai`
-- **Benchmark:**      1.000 control score on a 36-task public benchmark, 0.2 ms median verdict latency
+- **Live dashboard:**  <https://seyomi-cordon-cloud.hf.space/>  *(Cordon Cloud — every verdict, in real time)*
+- **API docs:**        <https://seyomi-cordon-playground.hf.space/api/docs>
+- **PyPI:**            [`cordon-ai`](https://pypi.org/project/cordon-ai/) · `pip install cordon-ai`
+- **Benchmark:**       1.000 control score on a 36-task public benchmark, 0.2 ms median verdict latency
 
 ```bash
 pip install cordon-ai
@@ -271,6 +272,55 @@ Cordon is the production-grade descendant of two research projects:
 
 - **ActionLens** — 3rd place at [Apart Research](https://apartresearch.com/) AI Control Hackathon 2026 (36 countries). Introduced the pre-execution environment probes and the 36-task benchmark. [Repo →](https://github.com/Ashok-kumar290/ActionLens)
 - **Context-Conditioned Confidentiality Failures in Refusal-Tuned Language Models** — Cohere Catalyst Grant, 2026. Showed that refusal-tuned models leak confidential context at 46–62% even when explicitly instructed not to. This is the empirical basis for Cordon's secret-leak probe.
+
+## Cordon Cloud
+
+Cordon Cloud is the hosted half: every verdict your agent produces, in real time, on a searchable dashboard. It is built from two pieces that ship in this repo:
+
+- **`cordon.cloud.CloudReporter`** — a non-blocking telemetry listener. Two lines next to your existing `Guard.strict()`:
+
+  ```python
+  from cordon import Guard
+  from cordon.cloud import CloudReporter
+
+  guard = Guard.strict()
+  guard.add_listener(CloudReporter(api_key="cdn_demo"))
+  # every guard.check() now ships a verdict to the dashboard,
+  # from a background thread, without blocking your agent.
+  ```
+
+  Contract: never blocks (background thread + bounded queue), never raises (every failure mode is caught and surfaced via `warnings`), PII-safe by default (file bodies are dropped; command and evidence strings are length-capped at 512 chars). Locked in by [`tests/test_cloud_reporter.py`](tests/test_cloud_reporter.py) — 12 tests covering each of those guarantees.
+
+- **`cloud_server/`** — the receiving end. A small FastAPI service with a single sqlite table, an API-key-gated `POST /v1/ingest`, and a polling dashboard at `/`. Deployed to a Hugging Face Space alongside the playground:
+
+  ```bash
+  bash cloud_server/space/deploy.sh <your-hf-username>
+  # → https://<user>-cordon-cloud.hf.space/
+  ```
+
+  Run it locally instead — same image, same dashboard:
+
+  ```bash
+  CORDON_CLOUD_INGEST_KEYS="cdn_demo:demo" \
+    .venv/bin/uvicorn cloud_server.app:app --port 7860
+  ```
+
+  On a cold start with an empty database the server seeds ~240 representative verdicts so the dashboard never shows an empty state. Real ingest traffic appears alongside the seeded events.
+
+Run the end-to-end demo against the local server in five seconds:
+
+```bash
+CORDON_API_KEY=cdn_demo CORDON_CLOUD_ENDPOINT=http://127.0.0.1:7860 \
+  python examples/cloud_reporter.py
+```
+
+See [`examples/cloud_reporter.py`](examples/cloud_reporter.py) for the full wiring.
+
+### What Cordon Cloud is *not* yet
+
+- **Persistent.** Sqlite on a Hugging Face Space resets on every container rebuild. For real retention the same image accepts `CORDON_CLOUD_DB=postgresql://…` (TODO; Neon free tier works).
+- **Multi-tenant.** v0 has one project per ingest key, configured via the `CORDON_CLOUD_INGEST_KEYS` env var. Per-tenant projects + SSO are the paid-tier features.
+- **Real-time push.** The dashboard polls `/v1/events` every two seconds. SSE / WebSocket transport comes next.
 
 ## Deployment
 

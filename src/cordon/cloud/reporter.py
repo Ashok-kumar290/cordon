@@ -73,8 +73,14 @@ if TYPE_CHECKING:
     from cordon.core.types import Action, Verdict
 
 
-DEFAULT_ENDPOINT = "https://cloud.cordon.ai"
-"""Production Cordon Cloud ingest endpoint."""
+DEFAULT_ENDPOINT = "https://seyomi-cordon-cloud.hf.space"
+"""Default Cordon Cloud ingest endpoint.
+
+The hosted demo lives on a Hugging Face Space; production deployments
+override this via ``CORDON_CLOUD_ENDPOINT`` or the ``endpoint=``
+constructor argument. When ``cordon.ai`` ships, this default will move
+to ``https://cloud.cordon.ai``.
+"""
 
 _COMMAND_PREVIEW_LIMIT = 512
 _EVIDENCE_PREVIEW_LIMIT = 512

@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en" class="antialiased scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cordon Cloud — live agent verdict dashboard</title>
+  <meta name="description"
+        content="Real-time telemetry for pre-execution agent verdicts.
+                 See every action your AI agents tried, what was blocked,
+                 and why — without slowing them down." />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://code.iconify.design/iconify-icon/1.0.7/iconify-icon.min.js"></script>
+
+  <link rel="icon" type="image/svg+xml"
+        href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23ffffff'/%3E%3Cpath d='M9 16h14M16 9v14' stroke='%23080a0f' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
+
+  <style>
+    :root {
+      --bg: #080a0f;
+      --panel: #0f1218;
+      --border: rgba(255, 255, 255, 0.07);
+      --muted: #6b7280;
+      --text: #e5e7eb;
+      --critical: #ef4444;
+      --dangerous: #f97316;
+      --high: #eab308;
+      --medium: #38bdf8;
+      --allow: #22c55e;
+    }
+    html, body { background: var(--bg); color: var(--text); }
+    body { font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+    .mono { font-family: ui-monospace, "JetBrains Mono", "Fira Code", monospace; }
+    .panel { background: var(--panel); border: 1px solid var(--border); }
+    .pulse-dot {
+      display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+      background: #22c55e; box-shadow: 0 0 8px #22c55e88;
+      animation: pulse 1.6s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%,100% { opacity: 1; transform: scale(1); }
+      50% { opacity: .4; transform: scale(.85); }
+    }
+    .row-enter { animation: rowIn .35s ease-out; }
+    @keyframes rowIn {
+      from { opacity: 0; transform: translateY(-4px); background: rgba(34,197,94,.07); }
+      to   { opacity: 1; transform: translateY(0);    background: transparent; }
+    }
+    .scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+    .scrollbar::-webkit-scrollbar-thumb { background: #2a2f3a; border-radius: 3px; }
+    .scrollbar::-webkit-scrollbar-track { background: transparent; }
+  </style>
+</head>
+
+<body class="min-h-screen">
+  <!-- ─── Top bar ───────────────────────────────────────────────── -->
+  <header class="border-b border-white/5 sticky top-0 z-20 bg-[#080a0f]/85 backdrop-blur">
+    <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <a href="https://github.com/Ashok-kumar290/cordon"
+           target="_blank" rel="noopener"
+           class="flex items-center gap-2.5 text-white font-semibold tracking-tight">
+          <svg width="22" height="22" viewBox="0 0 32 32" fill="none">
+            <rect width="32" height="32" rx="6" fill="#ffffff"/>
+            <path d="M9 16h14M16 9v14" stroke="#080a0f" stroke-width="3" stroke-linecap="round"/>
+          </svg>
+          <span>Cordon Cloud</span>
+        </a>
+        <span class="hidden sm:inline-block text-neutral-500 mono text-xs px-2 py-0.5
+                     rounded border border-white/10">v0.1 · live demo</span>
+      </div>
+
+      <nav class="flex items-center gap-5 text-sm text-neutral-400">
+        <span class="hidden md:flex items-center gap-2">
+          <span class="pulse-dot"></span>
+          <span class="mono text-xs" id="live-status">connecting…</span>
+        </span>
+        <select id="project-select"
+                class="bg-transparent border border-white/10 rounded px-2 py-1 text-xs mono
+                       focus:outline-none focus:border-white/30">
+          <option value="demo">project: demo</option>
+        </select>
+        <select id="window-select"
+                class="bg-transparent border border-white/10 rounded px-2 py-1 text-xs mono
+                       focus:outline-none focus:border-white/30">
+          <option value="3600">last 1 h</option>
+          <option value="21600">last 6 h</option>
+          <option value="86400" selected>last 24 h</option>
+          <option value="604800">last 7 d</option>
+        </select>
+        <a href="/api/docs" target="_blank" rel="noopener"
+           class="hover:text-white transition-colors hidden md:inline">API</a>
+        <a href="https://github.com/Ashok-kumar290/cordon" target="_blank" rel="noopener"
+           class="hover:text-white transition-colors">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- ─── Hero strip ─────────────────────────────────────────────── -->
+  <section class="max-w-7xl mx-auto px-6 pt-10 pb-6">
+    <h1 class="text-3xl md:text-4xl font-semibold tracking-tight text-white">
+      Verdict stream
+    </h1>
+    <p class="mt-2 text-neutral-400 max-w-2xl">
+      Every action your agents proposed, judged by Cordon
+      <em class="text-neutral-200">before</em> it executed. This dashboard
+      is wired to a public-demo project seeded with representative
+      events. Point your own agent at
+      <code class="mono text-xs bg-white/5 px-1.5 py-0.5 rounded text-neutral-300">/v1/ingest</code>
+      to see your own.
+    </p>
+  </section>
+
+  <!-- ─── Metric cards ───────────────────────────────────────────── -->
+  <section class="max-w-7xl mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-3">
+    <div class="panel rounded-lg p-5">
+      <div class="text-[11px] uppercase tracking-wider text-neutral-500">Total verdicts</div>
+      <div class="mt-2 mono text-3xl text-white" id="m-total">—</div>
+      <div class="mt-1 text-xs text-neutral-500" id="m-total-sub">in window</div>
+    </div>
+    <div class="panel rounded-lg p-5">
+      <div class="text-[11px] uppercase tracking-wider text-neutral-500">Block rate</div>
+      <div class="mt-2 mono text-3xl" id="m-block">—</div>
+      <div class="mt-1 text-xs text-neutral-500" id="m-block-sub">— blocked · — flagged</div>
+    </div>
+    <div class="panel rounded-lg p-5">
+      <div class="text-[11px] uppercase tracking-wider text-neutral-500">Mean suspicion</div>
+      <div class="mt-2 mono text-3xl text-white" id="m-score">—</div>
+      <div class="mt-1 text-xs text-neutral-500">across all probes</div>
+    </div>
+    <div class="panel rounded-lg p-5">
+      <div class="text-[11px] uppercase tracking-wider text-neutral-500">Top probe</div>
+      <div class="mt-2 mono text-xl text-white" id="m-top-probe">—</div>
+      <div class="mt-1 text-xs text-neutral-500" id="m-top-probe-sub">— hits</div>
+    </div>
+  </section>
+
+  <!-- ─── Sparkline ──────────────────────────────────────────────── -->
+  <section class="max-w-7xl mx-auto px-6 mt-3">
+    <div class="panel rounded-lg p-5">
+      <div class="flex items-center justify-between">
+        <div class="text-[11px] uppercase tracking-wider text-neutral-500">Verdicts over time</div>
+        <div class="text-xs text-neutral-500 mono">
+          <span class="inline-block w-2 h-2 rounded-sm bg-white/40 align-middle mr-1"></span>total
+          <span class="inline-block w-2 h-2 rounded-sm bg-red-500/80 align-middle ml-3 mr-1"></span>blocked
+        </div>
+      </div>
+      <svg id="sparkline" class="mt-3 w-full" viewBox="0 0 600 80" preserveAspectRatio="none"></svg>
+    </div>
+  </section>
+
+  <!-- ─── Filters + event table ──────────────────────────────────── -->
+  <section class="max-w-7xl mx-auto px-6 mt-3">
+    <div class="panel rounded-lg overflow-hidden">
+      <div class="flex flex-wrap items-center gap-2 px-5 py-3 border-b border-white/5">
+        <div class="text-sm font-medium text-white mr-auto">Live events</div>
+        <div class="flex items-center gap-2">
+          <button data-filter="decision" data-value=""       class="flt active px-2.5 py-1 text-xs rounded mono">all</button>
+          <button data-filter="decision" data-value="block"  class="flt px-2.5 py-1 text-xs rounded mono">block</button>
+          <button data-filter="decision" data-value="flag"   class="flt px-2.5 py-1 text-xs rounded mono">flag</button>
+          <button data-filter="decision" data-value="allow"  class="flt px-2.5 py-1 text-xs rounded mono">allow</button>
+        </div>
+      </div>
+      <div class="max-h-[560px] overflow-auto scrollbar">
+        <table class="w-full text-sm">
+          <thead class="text-[11px] uppercase tracking-wider text-neutral-500 sticky top-0 bg-[#0f1218]">
+            <tr>
+              <th class="text-left px-5 py-2 font-medium">When</th>
+              <th class="text-left px-3 py-2 font-medium">Kind</th>
+              <th class="text-left px-3 py-2 font-medium">Decision</th>
+              <th class="text-left px-3 py-2 font-medium">Probe</th>
+              <th class="text-left px-3 py-2 font-medium">Evidence</th>
+              <th class="text-right px-5 py-2 font-medium">Score</th>
+            </tr>
+          </thead>
+          <tbody id="events-body" class="divide-y divide-white/5"></tbody>
+        </table>
+      </div>
+      <div id="events-empty" class="hidden text-center text-neutral-500 mono text-sm py-12">
+        no events match the current filters
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── How to send your own events ────────────────────────────── -->
+  <section class="max-w-7xl mx-auto px-6 mt-10 mb-10">
+    <div class="panel rounded-lg p-6">
+      <h2 class="text-lg font-semibold text-white">Ship your own verdicts here</h2>
+      <p class="mt-2 text-sm text-neutral-400">
+        Add two lines to any agent already using
+        <code class="mono text-xs bg-white/5 px-1.5 py-0.5 rounded">cordon-ai</code>:
+      </p>
+      <pre class="mt-4 mono text-xs bg-black/40 border border-white/5 rounded p-4 overflow-auto scrollbar"><span class="text-neutral-500"># pip install cordon-ai</span>
+<span class="text-sky-300">from</span> cordon <span class="text-sky-300">import</span> Guard
+<span class="text-sky-300">from</span> cordon.cloud <span class="text-sky-300">import</span> CloudReporter
+
+guard = Guard.strict()
+guard.add_listener(CloudReporter(
+    api_key=<span class="text-green-300">"cdn_demo"</span>,
+    endpoint=<span class="text-green-300" id="endpoint-snippet">"https://seyomi-cordon-cloud.hf.space"</span>,
+))
+
+<span class="text-neutral-500"># Every guard.check() now ships a verdict to this dashboard.</span></pre>
+      <p class="mt-3 text-xs text-neutral-500">
+        The demo project key <code class="mono">cdn_demo</code> is intentionally
+        shared. For production, ask for a per-tenant key.
+      </p>
+    </div>
+  </section>
+
+  <!-- ─── Event detail drawer ───────────────────────────────────── -->
+  <div id="detail-backdrop" class="hidden fixed inset-0 bg-black/70 z-30"></div>
+  <aside id="detail-drawer"
+         class="hidden fixed top-0 right-0 bottom-0 w-full md:w-[520px] panel z-40
+                overflow-auto scrollbar">
+    <div class="px-5 py-4 border-b border-white/5 flex items-center justify-between sticky top-0
+                bg-[#0f1218]">
+      <div class="text-sm text-white font-medium">Event detail</div>
+      <button id="detail-close" class="text-neutral-400 hover:text-white">✕</button>
+    </div>
+    <div id="detail-body" class="p-5"></div>
+  </aside>
+
+  <footer class="border-t border-white/5 text-xs text-neutral-500">
+    <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+      <span class="mono">cordon-cloud · 0.1 · refreshes every 2 s</span>
+      <span class="mono">
+        <a href="https://seyomi-cordon-playground.hf.space" target="_blank" rel="noopener"
+           class="hover:text-white">playground →</a>
+      </span>
+    </div>
+  </footer>
+
+  <script src="/static/dashboard.js"></script>
+</body>
+</html>
