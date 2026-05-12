@@ -38,7 +38,7 @@ Cordon ships first-class integrations for the three frameworks every production 
 |-----------|------------------------------------------|--------------------------------------|---------|
 | OpenAI    | `cordon.integrations.openai`             | `check_response(response, ...)`      | [`examples/openai_protect.py`](examples/openai_protect.py)    |
 | Anthropic | `cordon.integrations.anthropic`          | `check_response(message, ...)`       | [`examples/anthropic_protect.py`](examples/anthropic_protect.py) |
-| LangChain | `cordon.integrations.langchain`          | `guard_tools([t1, t2], ...)`         | [`examples/langchain_protect.py`](examples/langchain_protect.py) |
+| LangChain | `cordon.integrations.langchain`          | `guard_tools([t1, t2], ...)` *or* `CordonGuardCallback(guard, ...)` for prebuilt agents | [`examples/langchain_protect.py`](examples/langchain_protect.py) |
 
 A single `ActionBuilder` registry maps your tool names to `cordon.Action` shapes — the *same* registry works across all three vendors:
 

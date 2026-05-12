@@ -79,6 +79,7 @@ Quickstart
 from __future__ import annotations
 
 import inspect
+import json
 import logging
 from collections.abc import Callable, Iterable
 from typing import Any, Literal
@@ -395,9 +396,201 @@ async def _delegate__arun(tool: Any, *args: Any, **kwargs: Any) -> Any:
     return _delegate__run(tool, *args, **kwargs)
 
 
+# ─── Callback handler ────────────────────────────────────────────────────────
+#
+# The wrapper pattern above (GuardedTool + guard_tools) is the recommended
+# integration point: it forces explicit opt-in per tool and works without
+# the ``langchain`` package installed. But some users — especially those
+# using ``langgraph.prebuilt.create_react_agent`` or LangChain's other
+# prebuilt agents — cannot wrap individual tools because the agent
+# constructor owns the tool list. For those users, the callback below
+# offers a complementary mechanism: register one ``CordonGuardCallback``
+# on the agent's ``callbacks=`` and every tool call gets guarded.
+#
+# How the gate works: LangChain's ``BaseCallbackHandler`` infrastructure
+# normally swallows exceptions raised by callbacks (to keep agents
+# resilient to logging bugs). Setting the class-level ``raise_error =
+# True`` attribute opts out of that — exceptions propagate, which is
+# how we actually stop a tool from running.
+
+
+class CordonGuardCallback:
+    """LangChain callback that runs a Cordon guard on every tool call.
+
+    Use this when you can't wrap tools individually — typically with
+    prebuilt agents like ``langgraph.prebuilt.create_react_agent`` or
+    ``langchain.agents.AgentExecutor`` where the tool list is owned
+    by the agent constructor and not exposed for wrapping.
+
+    Example::
+
+        from cordon import Guard
+        from cordon.integrations.langchain import (
+            ActionBuilder, CordonGuardCallback,
+        )
+
+        builder = ActionBuilder()
+
+        @builder.tool("run_shell")
+        def _(args: dict) -> Action:
+            return Action(kind="shell", command=args["command"])
+
+        agent = create_react_agent(
+            model, tools=[run_shell, write_file],
+            checkpointer=memory,
+        )
+        result = agent.invoke(
+            {"messages": [HumanMessage(content="...")]},
+            config={"callbacks": [CordonGuardCallback(
+                Guard.strict(), builder=builder,
+            )]},
+        )
+
+    Design notes
+    ------------
+
+    * Duck-typed against ``langchain_core.callbacks.BaseCallbackHandler``
+      — we don't inherit from it because that would force a runtime
+      dependency on ``langchain-core`` for everyone importing
+      ``cordon.integrations.langchain``. The shape (``raise_error``,
+      ``on_tool_start``, ``on_tool_end``, ``on_tool_error``) is what
+      LangChain checks for, and it's perfectly stable across the 0.1.x
+      → 0.3.x range.
+
+    * ``raise_error = True`` is set as a class attribute so LangChain's
+      callback manager propagates the :class:`BlockedAction` we raise.
+      Without it, the agent would silently log the exception and run
+      the tool anyway — i.e. the gate would be cosmetic.
+
+    * The callback honours the same ``on_block`` semantics as
+      :class:`GuardedTool`: ``"raise"`` (default) aborts the run with
+      :class:`BlockedAction`; ``"return_error"`` lets the tool run
+      normally but emits the verdict on ``last_verdict`` so observability
+      consumers can react. Use ``"return_error"`` with care — the tool
+      still executes.
+
+    Attributes:
+        guard: The :class:`Guard` to use.
+        builder: Maps tool names → :class:`Action` constructors.
+        on_block: ``"raise"`` aborts the run on block; ``"return_error"``
+            lets execution continue (the tool runs, you observe).
+        last_verdict: The last verdict produced (debugging / audit).
+    """
+
+    # LangChain callback infrastructure looks for this class attribute
+    # to decide whether to propagate exceptions raised in callbacks.
+    # Without it, BlockedAction would be logged and swallowed.
+    raise_error = True
+
+    # Callbacks that mutate state should not run in the LangChain thread
+    # pool; we're side-effect-only (read action, call guard, raise) so
+    # this is safe to leave at the default.
+    run_inline = True
+
+    def __init__(
+        self,
+        guard: Guard,
+        *,
+        builder: ActionBuilder,
+        on_block: OnBlock = "raise",
+    ) -> None:
+        self.guard = guard
+        self.builder = builder
+        self.on_block: OnBlock = on_block
+        self.last_verdict: Verdict | None = None
+
+    # ── Tool lifecycle hooks ──────────────────────────────────────────
+
+    def on_tool_start(
+        self,
+        serialized: dict[str, Any],
+        input_str: str,
+        *,
+        inputs: dict[str, Any] | None = None,
+        **_kwargs: Any,
+    ) -> None:
+        """Run the guard before LangChain dispatches the tool.
+
+        LangChain calls this with ``serialized`` (a dict carrying at
+        least ``{"name": ...}``) and ``input_str`` (a string repr of
+        the tool's arguments — JSON for structured tools, the raw arg
+        for single-input tools). Newer LangChain versions also pass an
+        ``inputs`` dict; we prefer that when available.
+        """
+        tool_name = (serialized or {}).get("name") or ""
+        arguments = inputs if inputs is not None else _parse_input_str(input_str)
+        self._guard(tool_name, arguments)
+
+    async def on_tool_start_async(
+        self,
+        serialized: dict[str, Any],
+        input_str: str,
+        *,
+        inputs: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Async mirror — same gate, awaited path."""
+        # We don't need to do anything async; the guard runs in-process.
+        self.on_tool_start(serialized, input_str, inputs=inputs, **kwargs)
+
+    def on_tool_end(self, output: Any, **_kwargs: Any) -> None:
+        """Hook for downstream consumers. No-op by default."""
+        return None
+
+    def on_tool_error(self, error: BaseException, **_kwargs: Any) -> None:
+        """Hook for downstream consumers. No-op by default."""
+        return None
+
+    # ── Internals ─────────────────────────────────────────────────────
+
+    def _guard(self, tool_name: str, arguments: dict[str, Any]) -> None:
+        action = self.builder.build(tool_name, arguments)
+        if action is None:
+            verdict = verdict_for_unknown_tool(
+                tool_name, self.builder.unknown_tool_policy, action_id=None,
+            )
+        else:
+            verdict = self.guard.check(action)
+        self.last_verdict = verdict
+
+        if verdict.decision != "block":
+            return
+
+        if self.on_block == "return_error":
+            # Don't raise — let the agent observe the verdict via
+            # ``last_verdict`` and continue. The tool *will* execute.
+            logger.warning(
+                "CordonGuardCallback: on_block='return_error', tool=%r, "
+                "reason=%s (suspicion=%.2f)",
+                tool_name, verdict.top_reason(), verdict.suspicion_score,
+            )
+            return
+        raise BlockedAction(verdict)
+
+
+def _parse_input_str(input_str: str) -> dict[str, Any]:
+    """Best-effort decode of LangChain's ``input_str`` into a dict.
+
+    LangChain's structured tools serialise args to JSON; single-input
+    tools pass the raw arg as a string. We try JSON first, fall back
+    to wrapping the string in ``{"input": input_str}`` so single-input
+    tools still surface their argument to the builder.
+    """
+    if not input_str:
+        return {}
+    try:
+        decoded = json.loads(input_str)
+    except (TypeError, ValueError):
+        return {"input": input_str}
+    if isinstance(decoded, dict):
+        return decoded
+    return {"input": decoded}
+
+
 __all__ = [
     "ActionBuilder",
     "ActionFactory",
+    "CordonGuardCallback",
     "GuardedTool",
     "guard_tool",
     "guard_tools",
