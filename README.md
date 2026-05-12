@@ -361,9 +361,9 @@ guard = Guard(
 
 **v0.1** — first release. Two semantic probes (`TyposquatProbe`, `SecretLeakProbe`), CLI, decorator API.
 
-**v0.2.2 (current)** — full 7-probe Semantic Guard suite (adds `DestructiveShellProbe`), per-tenant policy DSL with `Guard.from_policy()`, Cordon Cloud (hosted dashboard + policy editor + REST control plane), three vendor integrations (OpenAI, Anthropic, LangChain — both wrapper and callback), the canonical 42-task benchmark + comparative reproducer, **327 tests** passing.
+**v0.2.3 (current)** — 7-probe Semantic Guard suite + **4 content-aware probes** (`PythonASTProbe`, `PackageManifestProbe`, `Base64DecoderProbe`, `ArchiveInspectorProbe`) that close the camouflage-attack class documented in [`docs/threat-model.md`](docs/threat-model.md). Per-tenant policy DSL with `Guard.from_policy()`. Cordon Cloud (hosted dashboard + policy editor + REST control plane). Three vendor integrations (OpenAI, Anthropic, LangChain — both wrapper and callback). The canonical 42-task benchmark + comparative reproducer. **480 tests** passing.
 
-**v0.3 (next)** — content-aware probes (`PythonASTProbe`, `PackageManifestProbe`, `Base64DecoderProbe`, `ArchiveInspectorProbe`) to close the camouflage-attack class documented in [`docs/threat-model.md`](docs/threat-model.md). Streaming guard for partial-tool-call evaluation.
+**v0.3 (next)** — streaming guard for partial-tool-call evaluation, LangGraph integration example, threat-intel feed for the manifest probe.
 
 > **Read this before you pitch Cordon:** [`docs/threat-model.md`](docs/threat-model.md) — the honest list of what Cordon catches and what it doesn't, with concrete attack examples. Cordon is one layer in a three-layer defense; pretending otherwise hurts adoption.
 

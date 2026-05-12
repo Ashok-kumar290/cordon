@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] — 2026-05-12
+
+The **content-aware probe** release. Closes the four
+camouflage-attack patterns documented in
+[`docs/threat-model.md`](docs/threat-model.md) (§3.2, §3.4, §3.5, and
+the archive class) and ships an honest specification of what Cordon
+catches and what it doesn't.
+
+### Added — `cordon.probes.content` family
+
+Four new content-aware probes, all in the ``fast`` tier and wired
+into ``Guard.strict()`` / ``default`` / ``permissive`` automatically:
+
+* **`PythonASTProbe`** — parses proposed `.py` writes (and shebang-
+  detected non-extension scripts) with `ast`. Flags `os.system`,
+  `os.popen`, `subprocess.{run,Popen,call,check_*}(shell=True)`,
+  `__import__('os').system(...)`, `eval`/`exec` on dynamic args,
+  `compile(..., 'exec')`, and `sys.modules` subscript writes. Closes
+  the §3.5 evasion where the dangerous command string is composed
+  at runtime so substring matchers can't see it.
+
+* **`PackageManifestProbe`** — parses `requirements.txt` /
+  `requirements-*.txt` / `constraints.txt`, `package.json` (incl.
+  `scripts` install hooks across all 6 lifecycle events), and
+  `pyproject.toml` (Poetry sources + per-dep overrides). Flags raw
+  URL dependencies, non-canonical index URLs, VCS installs from
+  off-allowlist hosts, npm install hooks with shell metacharacters,
+  and the npm tarball-URL / git-URL / file: / link: forms. Closes
+  the §3.2 evasion (trojaned requirements.txt with a malicious URL
+  on line 3).
+
+* **`Base64DecoderProbe`** — scans both `Action.command` and
+  `Action.changes` for base64 runs, decodes them via
+  `b64decode(validate=True)`, and re-runs a tight set of 7 dangerous-
+  pattern matchers (`rm -rf /`, `curl|sh`, fork bomb, `dd` to block
+  device, `mkfs` on device, rc-file write, crontab inject) on the
+  decoded text. Closes the §3.4 evasion (b64-wrapped payloads in
+  binary-looking files).
+
+* **`ArchiveInspectorProbe`** — catches dangerous *archive
+  operations* at the shell-command boundary: download-pipe-extract
+  chains (`curl … | tar xz`), `tar -P` / `--absolute-names`,
+  extraction to sensitive system directories (`/etc`, `/usr`, `/bin`,
+  …) via `-C` / `-d` / `-o<dir>`, and double-extension archive
+  filenames (`report.pdf.zip`, `invoice.docx.tar.gz`) in both
+  commands and file writes. Does not open binary archive contents —
+  that's Layer 3's job.
+
+### Documentation — the honest threat model
+
+* **[`docs/threat-model.md`](docs/threat-model.md)** — the version-
+  stable specification of what Cordon catches and what it doesn't,
+  with six concrete camouflage attacks (verdicts: caught vs. not
+  caught), a three-layer defense-in-depth framing, and the load-
+  bearing pitch sentence (*"Cordon is the pre-execution control
+  layer. For payloads that are only harmful when executed later, you
+  pair Cordon with runtime sandboxing."*). Linked from the top of
+  the README.
+
+* **[`docs/runtime-sandboxing.md`](docs/runtime-sandboxing.md)** —
+  Layer 3 vendor recommendations: gVisor for OCI-compatible
+  isolation, Firecracker for microVM-grade separation, Cloudflare
+  Workers / Vercel Edge for serverless agents, hardened Docker for
+  the budget case, Bubblewrap for Linux-native nested sandboxing,
+  WASM for compile-to-WASM workflows. Exact command lines for each.
+  Includes the standard handoff sentence for design-partner calls.
+
+### Tests
+
+Suite: 327 → **480 passing** (+153).
+
+* `tests/probes/content/test_python_ast.py`       — 32 tests
+* `tests/probes/content/test_package_manifest.py` — 38 tests
+* `tests/probes/content/test_base64_decoder.py`   — 24 tests
+* `tests/probes/content/test_archive_inspector.py` — 59 tests
+
+All four probes are pinned by both positive catches and a broad set
+of benign baselines (10+ each) so we don't regress on real-world
+build / packaging commands.
+
 ## [0.2.2] — 2026-05-12
 
 The **per-tenant policy** release. Customers consistently asked the
