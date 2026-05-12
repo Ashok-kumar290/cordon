@@ -88,6 +88,8 @@
           <option value="86400" selected>last 24 h</option>
           <option value="604800">last 7 d</option>
         </select>
+        <a href="#policies"
+           class="hover:text-white transition-colors hidden md:inline">Policies</a>
         <a href="/api/docs" target="_blank" rel="noopener"
            class="hover:text-white transition-colors hidden md:inline">API</a>
         <a href="https://github.com/Ashok-kumar290/cordon" target="_blank" rel="noopener"
@@ -183,6 +185,118 @@
   </section>
 
   <!-- ─── How to send your own events ────────────────────────────── -->
+  <!-- ─── Policy editor (Lane 4) ─────────────────────────────────── -->
+  <section id="policies" class="max-w-7xl mx-auto px-6 mt-10 scroll-mt-20">
+    <div class="panel rounded-lg overflow-hidden">
+
+      <!-- Header strip ─ identifies the project + carries action buttons -->
+      <div class="flex flex-wrap items-center gap-3 px-5 py-3 border-b border-white/5">
+        <div class="flex items-center gap-2">
+          <iconify-icon icon="ph:shield-check-bold" width="18"
+                        class="text-emerald-400"></iconify-icon>
+          <div class="text-sm font-medium text-white">Project policy</div>
+          <span id="pol-meta" class="mono text-xs text-neutral-500"></span>
+        </div>
+
+        <div class="ml-auto flex items-center gap-2">
+          <button id="pol-validate"
+                  class="px-3 py-1 text-xs rounded mono border border-white/10
+                         text-neutral-300 hover:text-white hover:border-white/30
+                         transition-colors">
+            validate
+          </button>
+          <button id="pol-save"
+                  class="px-3 py-1 text-xs rounded mono bg-white text-black
+                         hover:bg-neutral-200 transition-colors">
+            save
+          </button>
+          <button id="pol-revert"
+                  class="px-3 py-1 text-xs rounded mono border border-white/10
+                         text-neutral-300 hover:text-white hover:border-white/30
+                         transition-colors">
+            revert
+          </button>
+          <button id="pol-delete"
+                  class="px-3 py-1 text-xs rounded mono border border-red-500/30
+                         text-red-300 hover:text-red-200 hover:border-red-500/60
+                         transition-colors">
+            delete
+          </button>
+        </div>
+      </div>
+
+      <!-- Two-column body: editor on the left, "try it" on the right -->
+      <div class="grid grid-cols-1 lg:grid-cols-3">
+
+        <!-- Editor + status line -->
+        <div class="lg:col-span-2 border-b lg:border-b-0 lg:border-r border-white/5">
+          <textarea id="pol-editor"
+                    spellcheck="false"
+                    class="w-full h-[420px] block bg-black/40 text-neutral-200 mono text-[13px]
+                           leading-6 px-5 py-4 outline-none resize-none scrollbar"
+                    placeholder="profile: strict
+&#10;
+# Carve out a real-world need our agents have:
+allow when command_starts_with: &quot;rm -rf node_modules&quot;
+allow when command_starts_with: &quot;rm -rf ./build&quot;
+&#10;
+# Promote a known-risky pattern to a hard block:
+block when path_starts_with: &quot;/etc/&quot;
+&#10;
+# Downgrade a noisy probe to flag-only:
+flag when probe: typosquat"></textarea>
+
+          <div id="pol-status"
+               class="mono text-xs px-5 py-2 border-t border-white/5
+                      text-neutral-500 min-h-[34px]">
+            ready.
+          </div>
+        </div>
+
+        <!-- Try-it panel: run the draft policy against an action without saving -->
+        <div class="p-5">
+          <div class="text-[11px] uppercase tracking-wider text-neutral-500">
+            Try this policy
+          </div>
+          <p class="mt-1 text-xs text-neutral-400">
+            Run the editor's current text against an action. Doesn't save —
+            useful for sanity-checking carve-outs before they go live.
+          </p>
+
+          <label class="block mt-4 text-[11px] uppercase tracking-wider text-neutral-500">
+            Action kind
+          </label>
+          <select id="pol-try-kind"
+                  class="mt-1 w-full bg-transparent border border-white/10 rounded px-2 py-1.5
+                         mono text-xs focus:outline-none focus:border-white/30">
+            <option value="shell">shell</option>
+            <option value="file">file</option>
+          </select>
+
+          <label class="block mt-3 text-[11px] uppercase tracking-wider text-neutral-500">
+            Command
+          </label>
+          <input id="pol-try-cmd" type="text"
+                 spellcheck="false"
+                 placeholder="rm -rf node_modules"
+                 class="mt-1 w-full bg-black/40 border border-white/10 rounded px-2 py-1.5
+                        mono text-xs text-neutral-200 focus:outline-none focus:border-white/30" />
+
+          <button id="pol-try-run"
+                  class="mt-4 w-full px-3 py-2 text-xs rounded mono
+                         bg-white text-black hover:bg-neutral-200 transition-colors">
+            run probes
+          </button>
+
+          <div id="pol-try-result"
+               class="mt-4 mono text-xs space-y-2 min-h-[120px]">
+            <div class="text-neutral-500">Output appears here.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="max-w-7xl mx-auto px-6 mt-10 mb-10">
     <div class="panel rounded-lg p-6">
       <h2 class="text-lg font-semibold text-white">Ship your own verdicts here</h2>
@@ -232,5 +346,6 @@ guard.add_listener(CloudReporter(
   </footer>
 
   <script src="/static/dashboard.js"></script>
+  <script src="/static/policies.js"></script>
 </body>
 </html>

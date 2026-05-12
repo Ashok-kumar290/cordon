@@ -6,8 +6,8 @@
 #   Dockerfile          — this file
 #   app.py              — cloud_server/app.py copied at deploy time
 #   storage.py          — cloud_server/storage.py copied at deploy time
-#   templates/          — dashboard.html
-#   static/             — dashboard.js
+#   templates/          — dashboard.html, landing.html
+#   static/             — dashboard.js, policies.js
 #
 # The Space's $HOME is writable for user 1000, so the sqlite db lives at
 # /home/app/data/cordon_cloud.db. Note that this filesystem is ephemeral:
