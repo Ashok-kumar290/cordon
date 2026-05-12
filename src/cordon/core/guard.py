@@ -139,7 +139,11 @@ class Guard:
         content-aware probes that parse file payloads to close the
         camouflage-attack class (see ``docs/threat-model.md``).
         """
-        from cordon.probes.content import PackageManifestProbe, PythonASTProbe
+        from cordon.probes.content import (
+            Base64DecoderProbe,
+            PackageManifestProbe,
+            PythonASTProbe,
+        )
         from cordon.probes.semantic import (
             DestructiveShellProbe,
             ExfiltrationProbe,
@@ -159,6 +163,7 @@ class Guard:
             DestructiveShellProbe(),
             PythonASTProbe(),
             PackageManifestProbe(),
+            Base64DecoderProbe(),
         ]
 
     @classmethod
