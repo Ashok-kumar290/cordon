@@ -64,7 +64,11 @@ echo "  Target:   $SPACE_URL"
 echo "  Workdir:  $WORK_DIR"
 echo "──────────────────────────────────────────────────────────────"
 
-git clone "$SPACE_URL" "$WORK_DIR"
+# Clone via the token-embedded URL so this works against private Spaces
+# too. The remote URL is then rewritten to the plain Space URL so the
+# token never lands in the working tree's .git/config.
+git clone "$PUSH_URL" "$WORK_DIR"
+git -C "$WORK_DIR" remote set-url origin "$SPACE_URL"
 
 # HF Space metadata + image definition.
 cp    "$SPACE_TEMPLATE/README.md"   "$WORK_DIR/README.md"

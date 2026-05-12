@@ -191,6 +191,47 @@ cordon demo          # runs 3 built-in actions: 2 attacks, 1 benign
 cordon version
 ```
 
+### OpenAI tool calls — three lines to protect any agent
+
+The same `Guard` that protects in-process Cordon `Action` objects also wraps the tool-call layer of an OpenAI agent. Declare how your tools map to actions once, attach the guard, and the next `client.chat.completions.create(...)` response runs through every probe before any tool dispatcher sees it:
+
+```python
+import cordon
+from cordon.cloud import CloudReporter
+from cordon.integrations.openai import ActionBuilder, check_response
+
+builder = ActionBuilder()
+
+@builder.tool("run_shell")
+def _shell(args): return cordon.Action(kind="shell", command=args["command"])
+
+@builder.tool("write_file")
+def _write(args): return cordon.Action(kind="file", changes={args["path"]: args["content"]})
+
+guard = cordon.Guard.strict()
+guard.add_listener(CloudReporter())          # ships verdicts to your dashboard
+
+completion = client.chat.completions.create(model="gpt-4o-mini", messages=..., tools=...)
+
+for tcv in check_response(completion, builder=builder, guard=guard):
+    if tcv.blocked:
+        send_refusal_to_model(tcv.tool_call_id, tcv.verdict.top_reason())
+    else:
+        dispatch_tool(tcv.tool_call_id, tcv.tool_name, tcv.arguments)
+```
+
+[`examples/openai_live_demo.py`](examples/openai_live_demo.py) is the runnable end-to-end version. Three escalating scenarios — *benign* / *exfiltration* / *typosquat* — produce one `allow`, one `flag`, and one `block` on a single screen. Gracefully degrades to a canned response when `OPENAI_API_KEY` is unset, and to a no-op `CloudReporter` when `CORDON_API_KEY` is unset, so the demo always runs:
+
+```bash
+# Offline (no keys) — runs canned, exits 0.
+.venv/bin/python examples/openai_live_demo.py
+
+# Live OpenAI call, verdicts shipped to your Cordon Cloud project.
+OPENAI_API_KEY=sk-... \
+CORDON_API_KEY=cdn_... \
+.venv/bin/python examples/openai_live_demo.py
+```
+
 ## Architecture
 
 ```
