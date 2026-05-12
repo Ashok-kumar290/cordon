@@ -409,3 +409,141 @@ def test_bearer_token_header_is_set(transport):
             assert "cordon-cloud-sdk" in hdrs.get("user-agent", "")
         finally:
             r.close(timeout=1.0)
+
+
+# ─── 5. Credential health-check on init (audit fix F-6) ───────────────────────
+
+
+class _AuthFailTransport:
+    """``urlopen`` stand-in that raises HTTPError on the next call.
+
+    Mirrors what the real ingest server returns when the bearer token
+    is rejected. Distinct from :class:`_FakeTransport` because we want
+    to exercise the ``HTTPError`` path that :func:`CloudReporter._send`
+    catches and re-raises as ``RuntimeError("ingest HTTP 403: ...")``.
+    """
+
+    def __init__(self, code: int) -> None:
+        self.code = code
+        self.calls = 0
+
+    def __call__(self, request, timeout: float):  # type: ignore[no-untyped-def]
+        from urllib import error as urlerror
+        self.calls += 1
+        raise urlerror.HTTPError(
+            url=request.full_url,
+            code=self.code,
+            msg="Forbidden" if self.code == 403 else "Unauthorized",
+            hdrs=None,  # type: ignore[arg-type]
+            fp=None,
+        )
+
+
+@pytest.mark.parametrize("code", [401, 403])
+def test_health_check_loud_warning_on_rejected_key(code):
+    """A rejected key on init must emit a loud warning and flip auth_ok=False."""
+    bad = _AuthFailTransport(code=code)
+    with patch("cordon.cloud.reporter.urlrequest.urlopen", new=bad):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            r = CloudReporter(
+                api_key="cdn_definitely_invalid",
+                endpoint="https://example.invalid",
+                flush_interval=0.05,
+            )
+            try:
+                assert r.auth_ok is False
+                assert bad.calls == 1, "expected exactly one synchronous probe"
+                messages = [str(w.message) for w in caught]
+                assert any(
+                    "API key rejected" in m and f"HTTP {code}" in m
+                    for m in messages
+                ), f"no loud auth warning emitted; got: {messages}"
+            finally:
+                r.close(timeout=1.0)
+
+
+def test_health_check_ok_on_good_key(transport):
+    """A working key must set auth_ok=True with zero warnings."""
+    with patch("cordon.cloud.reporter.urlrequest.urlopen", new=transport):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            r = CloudReporter(
+                api_key="cdn_good",
+                endpoint="https://example.invalid",
+                flush_interval=0.05,
+            )
+            try:
+                assert r.auth_ok is True
+                # First request must be the empty-body health probe.
+                assert transport.batches and transport.batches[0] == []
+                auth_warnings = [
+                    w for w in caught
+                    if "API key rejected" in str(w.message)
+                ]
+                assert auth_warnings == []
+            finally:
+                r.close(timeout=1.0)
+
+
+def test_health_check_silent_on_transport_error():
+    """A transport error must leave auth_ok=None and emit no auth warning.
+
+    Customers who run the SDK offline (or against an unreachable cloud
+    server) should not see a loud "API key rejected" claim. The
+    background thread will warn on every failed batch instead, which
+    is the right channel for transport health.
+    """
+    from urllib import error as urlerror
+
+    def boom(request, timeout):  # type: ignore[no-untyped-def]
+        raise urlerror.URLError("dns failure")
+
+    with patch("cordon.cloud.reporter.urlrequest.urlopen", new=boom):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            r = CloudReporter(
+                api_key="cdn_offline",
+                endpoint="https://example.invalid",
+                flush_interval=0.05,
+            )
+            try:
+                assert r.auth_ok is None
+                auth_warnings = [
+                    w for w in caught
+                    if "API key rejected" in str(w.message)
+                ]
+                assert auth_warnings == []
+            finally:
+                r.close(timeout=1.0)
+
+
+def test_verify_credentials_false_skips_probe(transport):
+    """Opt-out path: ``verify_credentials=False`` issues no probe."""
+    with patch("cordon.cloud.reporter.urlrequest.urlopen", new=transport):
+        r = CloudReporter(
+            api_key="cdn_skip",
+            endpoint="https://example.invalid",
+            flush_interval=0.05,
+            verify_credentials=False,
+        )
+        try:
+            assert r.auth_ok is None
+            # No synchronous probe means no batches sent yet.
+            assert transport.batches == []
+        finally:
+            r.close(timeout=1.0)
+
+
+def test_stats_exposes_auth_ok(transport):
+    """``stats()`` must expose ``auth_ok`` so callers can branch on it."""
+    with patch("cordon.cloud.reporter.urlrequest.urlopen", new=transport):
+        r = CloudReporter(
+            api_key="cdn_stats",
+            endpoint="https://example.invalid",
+            flush_interval=0.05,
+        )
+        try:
+            assert r.stats()["auth_ok"] is True
+        finally:
+            r.close(timeout=1.0)

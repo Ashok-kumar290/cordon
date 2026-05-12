@@ -122,6 +122,7 @@ class CloudReporter:
         timeout: float = 5.0,
         include_bodies: bool = False,
         guard_profile: str | None = None,
+        verify_credentials: bool = True,
     ) -> None:
         self.api_key = api_key or os.environ.get("CORDON_API_KEY", "")
         self.endpoint = (
@@ -146,6 +147,15 @@ class CloudReporter:
         # We still serialize events so users can spot-check ``self._queue``.
         self._enabled = bool(self.api_key)
 
+        # Credential status: True (verified), False (rejected), None
+        # (unknown — either not yet checked, transport error, or
+        # verify_credentials=False). We surface this in stats() so a
+        # bad key is visible even without scanning stderr.
+        self.auth_ok: bool | None = None
+
+        if self._enabled and verify_credentials:
+            self._check_credentials()
+
         self._thread: threading.Thread | None = None
         if self._enabled:
             self._thread = threading.Thread(
@@ -154,6 +164,40 @@ class CloudReporter:
                 daemon=True,
             )
             self._thread.start()
+
+    # ─── Credential health-check ──────────────────────────────────────────────
+
+    def _check_credentials(self) -> None:
+        """Synchronously verify the API key against the ingest endpoint.
+
+        On 401/403, emit a *loud* warning so users notice immediately
+        instead of staring at an empty dashboard wondering why. On
+        transport error we stay quiet (the user might just be offline
+        — the background thread will surface its own warnings later).
+
+        The request is bounded by a short timeout so a flaky network
+        doesn't block ``__init__`` for long. We POST an empty events
+        batch, which is a valid no-op the server accepts.
+        """
+        try:
+            self._send([])
+        except RuntimeError as exc:
+            msg = str(exc)
+            if "HTTP 401" in msg or "HTTP 403" in msg:
+                self.auth_ok = False
+                warnings.warn(
+                    f"CloudReporter: API key rejected by {self.endpoint} "
+                    f"({msg}). Events will be dropped. Set CORDON_API_KEY "
+                    f"to a valid ingest key (email founders@cordon.ai for one).",
+                    RuntimeWarning,
+                    stacklevel=3,
+                )
+            else:
+                # Transport error — leave auth_ok=None and stay quiet.
+                # The background thread will warn on every failed batch.
+                self.auth_ok = None
+        else:
+            self.auth_ok = True
 
     # ─── Listener interface ───────────────────────────────────────────────────
 
@@ -325,11 +369,17 @@ class CloudReporter:
 
     # ─── Diagnostics ──────────────────────────────────────────────────────────
 
-    def stats(self) -> dict[str, int | str | bool]:
-        """Snapshot of reporter health, suitable for logging."""
+    def stats(self) -> dict[str, Any]:
+        """Snapshot of reporter health, suitable for logging.
+
+        ``auth_ok`` is ``True`` if the credentials were verified at
+        construction time, ``False`` if the server rejected them
+        (401/403), and ``None`` if not checked or unreachable.
+        """
         return {
             "enabled": self._enabled,
             "endpoint": self.endpoint,
+            "auth_ok": self.auth_ok,
             "queued": self._queue.qsize(),
             "sent": self.sent,
             "dropped": self.dropped,

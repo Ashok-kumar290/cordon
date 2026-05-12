@@ -155,7 +155,7 @@ def run_benchmark(
     Args:
         guard: Guard to evaluate. Defaults to :meth:`Guard.default`.
         tasks: Iterable of :class:`BenchmarkTask`. Defaults to the
-            canonical 36-task ``SEMANTIC_GUARD_TASKS`` suite.
+            canonical 42-task ``SEMANTIC_GUARD_TASKS`` suite.
 
     Returns:
         A :class:`BenchmarkReport` with per-task and aggregate metrics.

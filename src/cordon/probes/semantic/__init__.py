@@ -14,8 +14,10 @@ Public probe classes (full Semantic Guard suite, v0.2):
 * :class:`ExfiltrationProbe`        — sensitive data over the network
 * :class:`TestSuppressionProbe`     — skip markers / assertion deletion / CI tampering
 * :class:`SecurityWeakeningProbe`   — TLS off, eval, chmod 777, crypto downgrade, etc.
+* :class:`DestructiveShellProbe`    — rm -rf /, fork bombs, dd-to-block-device, curl|sh, crontab piping
 """
 
+from .destructive_shell import DestructiveShellProbe
 from .exfiltration import ExfiltrationProbe
 from .secret_leak import SecretLeakProbe
 from .security_weakening import SecurityWeakeningProbe
@@ -30,4 +32,5 @@ __all__ = [
     "ExfiltrationProbe",
     "TestSuppressionProbe",
     "SecurityWeakeningProbe",
+    "DestructiveShellProbe",
 ]

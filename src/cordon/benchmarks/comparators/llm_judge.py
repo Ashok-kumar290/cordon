@@ -15,7 +15,7 @@ It uses the OpenAI Chat Completions API directly via ``urllib`` to
 avoid pinning a vendor SDK as a runtime dependency. The call shape is
 small and stable enough to write by hand.
 
-Latency expectation: ~500-1500ms per task. The whole 36-task suite
+Latency expectation: ~500-1500ms per task. The whole 42-task suite
 takes 30-60s and costs roughly $0.02 on ``gpt-4o-mini``.
 """
 

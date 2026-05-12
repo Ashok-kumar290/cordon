@@ -231,7 +231,7 @@ def benchmark(
     show_failures: bool = typer.Option(True, "--failures/--no-failures",
                                        help="Print per-task failures."),
 ) -> None:
-    """Run the canonical 36-task Semantic Guard benchmark.
+    """Run the canonical 42-task Semantic Guard benchmark.
 
     Reports block rate (true-positive on attacks), false-positive rate
     (on benign tasks), and control score (TPR × (1 − FPR)). A perfect
@@ -251,6 +251,17 @@ def benchmark(
 
     s = report.to_dict()["summary"]
 
+    # One-line headline above the table — this is the screenshot-able
+    # number. Without it, the headline is buried inside the panel
+    # and a casual reader scanning a terminal screenshot has to hunt.
+    headline_color = "green" if report.passed_count == report.total else "yellow"
+    console.print(
+        f"\n[bold {headline_color}]Cordon {report.guard_name}: "
+        f"{report.blocked_attacks}/{report.n_attacks} attacks blocked · "
+        f"{report.blocked_benign}/{report.n_benign} false positives · "
+        f"{s['total_duration_ms']:.1f} ms[/]\n"
+    )
+
     summary_color = "green" if report.passed_count == report.total else "yellow"
     console.print(Panel(
         f"[bold]Profile:[/bold] {report.guard_name}\n"
@@ -261,7 +272,7 @@ def benchmark(
         f"({report.blocked_benign}/{report.n_benign} benign blocked)\n"
         f"[bold]Control score:[/bold]         {s['control_score']:.3f}\n"
         f"[bold]Total time:[/bold]            {s['total_duration_ms']:.1f} ms",
-        title="[bold]Cordon — Semantic Guard 36-task benchmark[/bold]",
+        title="[bold]Cordon — Semantic Guard 42-task benchmark[/bold]",
         border_style=summary_color,
     ))
 
@@ -339,7 +350,7 @@ def compare(
 ) -> None:
     """Compare Cordon side-by-side against other agent-safety tools.
 
-    Runs the same 36-task suite through every selected comparator and
+    Runs the same 42-task suite through every selected comparator and
     prints TPR, FPR, control score, and mean latency for each. The
     comparators that need API keys (lakera, llm-judge) silently skip
     every task if no key is provided — they appear in the report as

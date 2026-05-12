@@ -1,7 +1,7 @@
 """Comparators — pluggable judges for the comparative benchmark.
 
 Each comparator implements the same minimal interface (``judge(task)
--> ComparatorVerdict``). This lets us run the *same* 36-task suite
+-> ComparatorVerdict``). This lets us run the *same* 42-task suite
 through Cordon, naive keyword heuristics, transcript-only LLM
 judging, and external services like Lakera and run head-to-head.
 

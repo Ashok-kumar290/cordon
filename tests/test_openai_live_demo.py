@@ -8,7 +8,7 @@ These tests assert:
 
 * The canned-fallback path (no ``OPENAI_API_KEY``) produces exactly
   one ``allow``, one ``flag``, and one ``block`` verdict, with the
-  right top probes (``-`` / ``exfiltration`` / ``typosquat``).
+  right top probes (``-`` / ``exfiltration`` / ``destructive_shell``).
 * A fake ``openai.OpenAI`` client whose ``chat.completions.create``
   returns hand-shaped responses is consumed by the same code path
   end-to-end (no shape mismatches).
@@ -61,7 +61,7 @@ def test_canned_fallback_produces_allow_flag_block(demo, capsys):
     # Section headers — confirm all three scenarios actually ran.
     assert "scenario: benign" in out
     assert "scenario: exfiltration" in out
-    assert "scenario: typosquat" in out
+    assert "scenario: destructive_shell" in out
 
     # Decision tally on the summary line. The ``_c`` colour helper is a
     # no-op when stdout is not a TTY (which pytest captures it as), so
@@ -76,9 +76,9 @@ def test_canned_fallback_probe_attribution(demo):
     from cordon.integrations.openai import check_response
 
     expectations = {
-        "benign":       ("allow", None),
-        "exfiltration": ("flag",  "exfiltration"),
-        "typosquat":    ("block", "typosquat"),
+        "benign":            ("allow", None),
+        "exfiltration":      ("flag",  "exfiltration"),
+        "destructive_shell": ("block", "destructive_shell"),
     }
 
     for label, user_msg, canned in demo.SCENARIOS:

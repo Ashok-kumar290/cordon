@@ -7,10 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-05-12
+
+The pitch-readiness release. Closes every P0 from the 2026-05-12
+user-journey audit (see `audit-report.md`) and ships the
+comparative benchmark framework that the README has been advertising.
+
 ### Added
 
+- **`DestructiveShellProbe`** — closes audit finding F-1. The
+  previous six probes targeted agent-specific attack vectors
+  (typosquat, exfiltration, secret leak, silent failure, test
+  suppression, security weakening), which meant a stranger typing
+  `cordon check` on `rm -rf /`, a fork bomb, `curl | sh`, or `dd
+  if=/dev/zero of=/dev/sda` got back `Decision: ALLOW`. This probe
+  catches all of them and reports `Severity.CRITICAL`, with tight
+  patterns that leave realistic benign commands
+  (`rm -rf node_modules`, `dd if=image.iso of=image.bin`) untouched.
+  52 unit tests + 3 new attack/benign benchmark pairs.
+- **`cordon.benchmarks.comparators` + `cordon compare` CLI**
+  (previously unreleased — completes the comparative benchmark
+  table the README has been showing).
+- **`CloudReporter` credential health-check on init** — closes
+  audit finding F-6. POSTs an empty events batch synchronously on
+  construction; on 401/403 emits a loud `RuntimeWarning` and flips
+  `auth_ok=False`. No more "events vanished into the void" UX.
+  Opt out with `verify_credentials=False`.
+- `auth_ok` field on `CloudReporter.stats()`.
+
+### Changed
+
+- **Benchmark suite grew from 36 to 42 tasks** — 6 new tasks (3
+  attack + 3 benign) for the `destructive_shell` category. The
+  per-profile headline scores actually *improved*: strict is still
+  `1.000` (21/21), default rose from `0.944` to `0.952`, permissive
+  from `0.889` to `0.905`.
+- `cordon benchmark` now prints a one-line headline above the
+  panel — *"Cordon strict: 21/21 attacks blocked · 0/21 false
+  positives · 7.8 ms"* — for screenshot-friendly pitch material.
+  Fixes audit finding F-3.
+
+### Fixed
+
+- **`examples/cloud_reporter.py`** silently failed against the
+  live cloud server (HTTP 403) but claimed *"Done, open the
+  dashboard"* with `sent=0 failed_batches=0`. The example now reads
+  `CORDON_API_KEY` from env (errors out clearly when unset),
+  short-circuits when `reporter.auth_ok` is `False`, and calls
+  `reporter.close()` *before* reading stats so the in-flight HTTP
+  POST has actually returned. Closes audit finding F-4.
+
+### Documentation
+
+- New `audit-report.md` with the full user-journey audit and the
+  ranked fix list.
+- `cloud_server/RUNBOOK.md` explains the `cdn_demo` decision
+  (F-5): the example no longer relies on a public demo key.
+
+### Previously unreleased (now shipping in 0.2.1)
+
 - **`cordon.benchmarks.comparators` + `cordon compare` CLI** —
-  comparative benchmark framework. Runs the same 36-task suite
+  comparative benchmark framework. Runs the same 42-task suite
   through multiple judges side-by-side and prints TPR / FPR /
   control score / latency for each.
   - `Comparator` ABC + `ComparatorResult` / `ComparatorVerdict`
@@ -91,7 +148,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Anthropic).
 - New runnable examples: `examples/anthropic_protect.py`,
   `examples/langchain_protect.py`.
-- **`cordon.benchmarks` — the canonical 36-task Semantic Guard benchmark**:
+- **`cordon.benchmarks` — the canonical 42-task Semantic Guard benchmark**:
   - 36 hand-curated tasks: 3 attack + 3 benign per attack class × 6 classes.
   - `run_benchmark(guard, tasks=...)` driver returning a full
     `BenchmarkReport` with TPR, FPR, control score, per-category
@@ -179,5 +236,5 @@ Ported and hardened from the Semantic Guard component of ActionLens
   `TestSuppressionProbe`, `SecurityWeakeningProbe`.
 - Environment probes: `preview_diff`, `dry_run`, `sensitivity_scan`,
   `inspect_targets`.
-- `cordon benchmark` — reproducible 36-task ActionLens benchmark.
+- `cordon benchmark` — reproducible 42-task ActionLens benchmark.
 - OpenAI/Anthropic/LangChain integration helpers.

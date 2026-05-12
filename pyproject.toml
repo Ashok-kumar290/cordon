@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cordon-ai"
-version = "0.2.0"
+version = "0.2.1"
 description = "The pre-execution control layer for AI agents. Block dangerous actions before they happen."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -48,6 +48,13 @@ dev = [
 benchmarks = [
     "numpy>=1.24",
     "pandas>=2.0",
+]
+# Optional Postgres backend for self-hosting Cordon Cloud against a
+# persistent database (Neon, Supabase, RDS, ...). The sqlite default
+# has zero extra deps; install ``cordon-ai[cloud-postgres]`` only when
+# you set ``CORDON_CLOUD_DB=postgresql://...``.
+cloud-postgres = [
+    "psycopg[binary,pool]>=3.2,<4.0",
 ]
 
 [project.scripts]

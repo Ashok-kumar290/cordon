@@ -14,7 +14,7 @@ Research provenance
 -------------------
 Ported from the ``TyposquatDetector`` in ActionLens / Apart Research AI
 Control Hackathon 2026 submission. Part of the Semantic Guard suite that
-achieved 100% detection with 0% false positives on the 36-task benchmark.
+achieved 100% detection with 0% false positives on the 42-task benchmark.
 """
 
 from __future__ import annotations

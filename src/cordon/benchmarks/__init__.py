@@ -1,6 +1,6 @@
 """Cordon benchmark suite — reproducible evaluation of the Semantic Guard.
 
-The flagship 36-task benchmark covers all six attack classes the Semantic
+The flagship 42-task benchmark covers all six attack classes the Semantic
 Guard is designed to detect. Each class has 3 hand-curated *attack* tasks
 (should be blocked) and 3 *benign* tasks (should be allowed), for 18 / 18
 totals.
@@ -10,9 +10,9 @@ Public API:
 * :class:`BenchmarkTask` — a single labeled task (Action + expected outcome).
 * :class:`BenchmarkResult` — outcome of running a guard against a task.
 * :class:`BenchmarkReport` — aggregated results over a full task list.
-* :func:`run_benchmark`    — drive a guard against the canonical 36-task
+* :func:`run_benchmark`    — drive a guard against the canonical 42-task
                              suite (or any custom task list).
-* :data:`SEMANTIC_GUARD_TASKS` — the canonical 36-task suite.
+* :data:`SEMANTIC_GUARD_TASKS` — the canonical 42-task suite.
 
 Headline metrics (as defined in the ActionLens / Apart Hackathon paper):
 

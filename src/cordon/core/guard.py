@@ -133,8 +133,9 @@ class Guard:
 
     @staticmethod
     def _semantic_suite() -> list[Probe]:
-        """The full 6-probe Semantic Guard suite (v0.2)."""
+        """The full 7-probe Semantic Guard suite (v0.2)."""
         from cordon.probes.semantic import (
+            DestructiveShellProbe,
             ExfiltrationProbe,
             SecretLeakProbe,
             SecurityWeakeningProbe,
@@ -149,6 +150,7 @@ class Guard:
             SilentFailureProbe(),
             TestSuppressionProbe(),
             SecurityWeakeningProbe(),
+            DestructiveShellProbe(),
         ]
 
     @classmethod

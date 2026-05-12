@@ -1,4 +1,4 @@
-"""Tests for the 36-task benchmark suite + runner."""
+"""Tests for the 42-task benchmark suite + runner."""
 
 from __future__ import annotations
 
@@ -17,17 +17,17 @@ from cordon.benchmarks import (
 # ─── Suite shape ──────────────────────────────────────────────────────────────
 
 
-def test_canonical_suite_has_36_tasks() -> None:
-    assert len(SEMANTIC_GUARD_TASKS) == 36
+def test_canonical_suite_has_42_tasks() -> None:
+    assert len(SEMANTIC_GUARD_TASKS) == 42
 
 
 def test_canonical_suite_balanced_attacks_and_benign() -> None:
     counts = Counter(t.expected for t in SEMANTIC_GUARD_TASKS)
-    assert counts["block"] == 18
-    assert counts["allow"] == 18
+    assert counts["block"] == 21
+    assert counts["allow"] == 21
 
 
-def test_canonical_suite_six_categories() -> None:
+def test_canonical_suite_seven_categories() -> None:
     cats = {t.category for t in SEMANTIC_GUARD_TASKS}
     assert cats == {
         "typosquat",
@@ -36,6 +36,7 @@ def test_canonical_suite_six_categories() -> None:
         "silent_failure",
         "test_suppression",
         "security_weakening",
+        "destructive_shell",
     }
 
 
@@ -59,8 +60,8 @@ def test_task_ids_unique() -> None:
 
 def test_run_benchmark_returns_report_for_each_task() -> None:
     report = run_benchmark(Guard.default())
-    assert report.total == 36
-    assert len(report.results) == 36
+    assert report.total == 42
+    assert len(report.results) == 42
 
 
 def test_run_benchmark_with_custom_tasks() -> None:
@@ -90,7 +91,7 @@ def test_run_benchmark_with_custom_tasks() -> None:
 
 def test_run_benchmark_default_uses_canonical_tasks() -> None:
     report = run_benchmark()
-    assert report.total == 36
+    assert report.total == 42
 
 
 # ─── Headline metrics ─────────────────────────────────────────────────────────
@@ -135,6 +136,7 @@ def test_per_category_breakdown_keys() -> None:
     assert set(by_cat) == {
         "typosquat", "secret_leak", "exfiltration",
         "silent_failure", "test_suppression", "security_weakening",
+        "destructive_shell",
     }
     for stats in by_cat.values():
         assert stats["n_attacks"] == 3
@@ -145,8 +147,8 @@ def test_to_dict_serializes_fully() -> None:
     report = run_benchmark(Guard.strict())
     blob = report.to_dict()
     assert "summary" in blob and "per_category" in blob and "results" in blob
-    assert blob["summary"]["total"] == 36
-    assert len(blob["results"]) == 36
+    assert blob["summary"]["total"] == 42
+    assert len(blob["results"]) == 42
     # Every result has the expected keys.
     for r in blob["results"]:
         assert {"id", "category", "expected", "decision", "passed"}.issubset(r)
@@ -156,7 +158,7 @@ def test_results_have_timing() -> None:
     report = run_benchmark(Guard.strict())
     for r in report.results:
         assert r.duration_ms >= 0.0
-    # The whole 36-task suite should complete in well under a second on
+    # The whole 42-task suite should complete in well under a second on
     # any modern machine. This is the "no-LLM, deterministic" promise.
     assert report.total_duration_ms < 1000.0
 

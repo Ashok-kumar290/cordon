@@ -30,7 +30,7 @@ See ``docs/research.md`` for benchmark results and citations.
 from cordon.core.guard import BlockedAction, Guard
 from cordon.core.types import Action, Decision, ProbeResult, Severity, Verdict
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 __all__ = [
     "Guard",
