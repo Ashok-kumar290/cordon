@@ -163,23 +163,136 @@ if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
-# ─── Dashboard ─────────────────────────────────────────────────────────────────
+# ─── Dashboard access gate ────────────────────────────────────────────────────
+#
+# Cordon Cloud is positioned as a private design-partner / enterprise
+# product. The HF Space stays *publicly reachable* (so customer agents
+# can still POST to ``/v1/ingest`` without HF credentials), but every
+# read surface — the dashboard HTML and the JSON API the dashboard
+# polls — is gated behind a shared secret in ``CORDON_CLOUD_DASHBOARD_TOKEN``.
+#
+# Auditors hitting the bare ``.hf.space`` URL get a styled "access
+# required" page that points them at ``founders@cordon.ai``. Investors
+# who have been granted access visit ``/?t=<token>`` and the JS layer
+# carries that token forward on every API call (see ``dashboard.js``).
+#
+# Notes:
+#
+# * The ingest endpoint has its own Bearer auth, so making it part of
+#   this gate would just double-authenticate the SDK without adding
+#   any security.
+# * ``/healthz`` is intentionally left open so external uptime monitors
+#   can poll the Space without holding the dashboard secret.
+
+from fastapi.responses import HTMLResponse
 
 
-def _dashboard_auth_or_400(request: Request) -> None:
+def _has_dashboard_access(request: Request) -> bool:
+    """True if the request carries the dashboard secret (or none is set)."""
     if not _DASHBOARD_TOKEN:
-        return
-    supplied = request.query_params.get("t") or ""
-    if supplied != _DASHBOARD_TOKEN:
-        raise HTTPException(status_code=401, detail="dashboard token required")
+        return True
+    supplied = (
+        request.query_params.get("t")
+        or request.headers.get("X-Cordon-Dashboard-Token")
+        or ""
+    )
+    return supplied == _DASHBOARD_TOKEN
+
+
+def _require_dashboard_access(request: Request) -> None:
+    """For JSON endpoints: 401 with a machine-readable body if blocked."""
+    if not _has_dashboard_access(request):
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "dashboard access required — append ?t=<token> or set "
+                "X-Cordon-Dashboard-Token. Email founders@cordon.ai for "
+                "design-partner access."
+            ),
+        )
+
+
+_ACCESS_REQUIRED_HTML = """\
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Cordon Cloud · Access required</title>
+<link rel="icon" type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23ffffff'/%3E%3Cpath d='M9 16h14M16 9v14' stroke='%23080a0f' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin:0; padding:0; background:#080a0f; color:#e5e7eb;
+               font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+  body { min-height: 100vh; display:flex; align-items:center; justify-content:center; padding: 24px; }
+  main { max-width: 520px; width: 100%; background:#0f1218; border:1px solid rgba(255,255,255,0.07);
+         border-radius: 14px; padding: 36px 32px; }
+  .logo { display:inline-flex; align-items:center; gap:10px; font-weight:600; color:#fff; letter-spacing:-0.01em; }
+  .logo svg { display:block; }
+  h1 { font-size: 22px; line-height:1.25; margin: 28px 0 6px; color:#fff; letter-spacing:-0.01em; }
+  p  { font-size: 14.5px; line-height:1.6; color:#a8aebb; margin: 10px 0 0; }
+  .hint { font-family: ui-monospace, "JetBrains Mono", "Fira Code", monospace;
+          font-size: 12px; background: rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06);
+          padding: 12px 14px; border-radius: 8px; margin-top: 20px; color:#cdd2da;
+          word-break: break-all; }
+  .cta { margin-top: 28px; display:flex; flex-wrap:wrap; gap:10px; }
+  .cta a { display:inline-flex; align-items:center; gap:6px; padding:10px 14px; border-radius:8px;
+           font-size:14px; text-decoration:none; transition: opacity .15s ease; }
+  .cta a:hover { opacity: 0.85; }
+  .primary   { background:#fff; color:#080a0f; font-weight:600; }
+  .secondary { background:transparent; color:#cdd2da; border:1px solid rgba(255,255,255,0.12); }
+  footer { margin-top: 30px; font-size: 12px; color:#6b7280; font-family: ui-monospace, monospace; }
+</style>
+</head>
+<body>
+  <main>
+    <span class="logo">
+      <svg width="22" height="22" viewBox="0 0 32 32" fill="none">
+        <rect width="32" height="32" rx="6" fill="#ffffff"/>
+        <path d="M9 16h14M16 9v14" stroke="#080a0f" stroke-width="3" stroke-linecap="round"/>
+      </svg>
+      Cordon Cloud
+    </span>
+
+    <h1>This dashboard is private.</h1>
+    <p>
+      Cordon Cloud is currently in closed beta with a small group of
+      design partners. The endpoint you reached is reachable, but the
+      live dashboard requires a per-tenant access token.
+    </p>
+    <p>
+      If you were given a magic link, it ends with
+      <span class="hint" style="display:inline; padding: 2px 6px; border:none; background: rgba(255,255,255,0.06)">?t=&lt;your-token&gt;</span>.
+      Append that to this URL to enter.
+    </p>
+
+    <div class="cta">
+      <a class="primary"   href="mailto:founders@cordon.ai?subject=Cordon%20Cloud%20access">Request access →</a>
+      <a class="secondary" href="https://seyomi-cordon-playground.hf.space/" target="_blank" rel="noopener">Open playground</a>
+      <a class="secondary" href="https://github.com/Ashok-kumar290/cordon" target="_blank" rel="noopener">Source on GitHub</a>
+    </div>
+
+    <footer>
+      cordon-cloud · v__VERSION__ · build is healthy
+    </footer>
+  </main>
+</body>
+</html>
+"""
 
 
 @app.get("/", include_in_schema=False)
 def index(request: Request) -> Any:
-    _dashboard_auth_or_400(request)
     page = TEMPLATES_DIR / "dashboard.html"
+    if not _has_dashboard_access(request):
+        return HTMLResponse(
+            _ACCESS_REQUIRED_HTML.replace("__VERSION__", app.version),
+            status_code=401,
+        )
     if page.exists():
         return FileResponse(page)
+    # No template AND access granted — fall back to JSON manifest.
     return JSONResponse(
         {
             "service": "cordon-cloud",
@@ -232,12 +345,14 @@ def ingest(
 
 @app.get("/v1/events")
 def list_events(
+    request: Request,
     project: str = Query("demo"),
     limit: int   = Query(50, ge=1, le=500),
     before: float | None = Query(None, description="UNIX ts, exclusive"),
     decision: str | None = Query(None, pattern="^(block|flag|allow)$"),
     probe:    str | None = Query(None),
 ) -> dict[str, Any]:
+    _require_dashboard_access(request)
     rows = STORE.list_events(
         project,
         limit=limit,
@@ -249,7 +364,12 @@ def list_events(
 
 
 @app.get("/v1/events/{event_id}")
-def get_event(event_id: int, project: str = Query("demo")) -> dict[str, Any]:
+def get_event(
+    event_id: int,
+    request: Request,
+    project: str = Query("demo"),
+) -> dict[str, Any]:
+    _require_dashboard_access(request)
     row = STORE.get_event(project, event_id)
     if row is None:
         raise HTTPException(status_code=404, detail="not found")
@@ -258,9 +378,11 @@ def get_event(event_id: int, project: str = Query("demo")) -> dict[str, Any]:
 
 @app.get("/v1/metrics")
 def get_metrics(
+    request: Request,
     project: str = Query("demo"),
     window_s: float = Query(24 * 3600, ge=60, le=30 * 24 * 3600),
 ) -> dict[str, Any]:
+    _require_dashboard_access(request)
     return STORE.metrics(project, window_s=window_s)
 
 

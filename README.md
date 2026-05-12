@@ -5,10 +5,10 @@
 Cordon runs deterministic safety probes on a proposed agent action *before* it executes. No LLM calls, no heuristics, no inference latency — just fast, auditable, replayable verdicts on whether an action is safe to run.
 
 - **Live playground:** <https://seyomi-cordon-playground.hf.space/>
-- **Live dashboard:**  <https://seyomi-cordon-cloud.hf.space/>  *(Cordon Cloud — every verdict, in real time)*
 - **API docs:**        <https://seyomi-cordon-playground.hf.space/api/docs>
 - **PyPI:**            [`cordon-ai`](https://pypi.org/project/cordon-ai/) · `pip install cordon-ai`
 - **Benchmark:**       1.000 control score on a 36-task public benchmark, 0.2 ms median verdict latency
+- **Cordon Cloud** (hosted dashboard) is in closed beta with design partners — email **founders@cordon.ai** for access
 
 ```bash
 pip install cordon-ai
@@ -273,54 +273,61 @@ Cordon is the production-grade descendant of two research projects:
 - **ActionLens** — 3rd place at [Apart Research](https://apartresearch.com/) AI Control Hackathon 2026 (36 countries). Introduced the pre-execution environment probes and the 36-task benchmark. [Repo →](https://github.com/Ashok-kumar290/ActionLens)
 - **Context-Conditioned Confidentiality Failures in Refusal-Tuned Language Models** — Cohere Catalyst Grant, 2026. Showed that refusal-tuned models leak confidential context at 46–62% even when explicitly instructed not to. This is the empirical basis for Cordon's secret-leak probe.
 
-## Cordon Cloud
+## Cordon Cloud (closed beta)
 
-Cordon Cloud is the hosted half: every verdict your agent produces, in real time, on a searchable dashboard. It is built from two pieces that ship in this repo:
+Cordon Cloud is the hosted half: every verdict your agent produces, in real time, on a searchable dashboard. **It is intentionally not advertised here.** The dashboard runs in a private beta with a small group of design partners; the URL is shared per-tenant with a magic access token. To request access, email **founders@cordon.ai** with one line about the agents you operate.
 
-- **`cordon.cloud.CloudReporter`** — a non-blocking telemetry listener. Two lines next to your existing `Guard.strict()`:
+### Two-line client SDK
 
-  ```python
-  from cordon import Guard
-  from cordon.cloud import CloudReporter
+The SDK that ships with `cordon-ai` is public — the gating only applies to the hosted dashboard:
 
-  guard = Guard.strict()
-  guard.add_listener(CloudReporter(api_key="cdn_demo"))
-  # every guard.check() now ships a verdict to the dashboard,
-  # from a background thread, without blocking your agent.
-  ```
+```python
+from cordon import Guard
+from cordon.cloud import CloudReporter
 
-  Contract: never blocks (background thread + bounded queue), never raises (every failure mode is caught and surfaced via `warnings`), PII-safe by default (file bodies are dropped; command and evidence strings are length-capped at 512 chars). Locked in by [`tests/test_cloud_reporter.py`](tests/test_cloud_reporter.py) — 12 tests covering each of those guarantees.
-
-- **`cloud_server/`** — the receiving end. A small FastAPI service with a single sqlite table, an API-key-gated `POST /v1/ingest`, and a polling dashboard at `/`. Deployed to a Hugging Face Space alongside the playground:
-
-  ```bash
-  bash cloud_server/space/deploy.sh <your-hf-username>
-  # → https://<user>-cordon-cloud.hf.space/
-  ```
-
-  Run it locally instead — same image, same dashboard:
-
-  ```bash
-  CORDON_CLOUD_INGEST_KEYS="cdn_demo:demo" \
-    .venv/bin/uvicorn cloud_server.app:app --port 7860
-  ```
-
-  On a cold start with an empty database the server seeds ~240 representative verdicts so the dashboard never shows an empty state. Real ingest traffic appears alongside the seeded events.
-
-Run the end-to-end demo against the local server in five seconds:
-
-```bash
-CORDON_API_KEY=cdn_demo CORDON_CLOUD_ENDPOINT=http://127.0.0.1:7860 \
-  python examples/cloud_reporter.py
+guard = Guard.strict()
+guard.add_listener(CloudReporter(
+    api_key="cdn_xxx",                              # provisioned per tenant
+    endpoint="https://your-tenant.cordon.ai",      # or self-hosted
+))
 ```
 
-See [`examples/cloud_reporter.py`](examples/cloud_reporter.py) for the full wiring.
+`CloudReporter` contract — locked in by [`tests/test_cloud_reporter.py`](tests/test_cloud_reporter.py) (12 tests):
 
-### What Cordon Cloud is *not* yet
+- **Never blocks** the agent. Telemetry is queued and flushed by a daemon thread; the listener call is sub-millisecond even when the server is unreachable.
+- **Never raises.** Network, serialization, and queue-full failures are caught and surfaced via `warnings`. A misbehaving dashboard cannot crash your agent.
+- **PII-safe by default.** File-change bodies are dropped, only paths and byte counts are sent; command and evidence strings are capped at 512 chars. `include_bodies=True` is the opt-in for when you control both ends.
 
-- **Persistent.** Sqlite on a Hugging Face Space resets on every container rebuild. For real retention the same image accepts `CORDON_CLOUD_DB=postgresql://…` (TODO; Neon free tier works).
-- **Multi-tenant.** v0 has one project per ingest key, configured via the `CORDON_CLOUD_INGEST_KEYS` env var. Per-tenant projects + SSO are the paid-tier features.
-- **Real-time push.** The dashboard polls `/v1/events` every two seconds. SSE / WebSocket transport comes next.
+### Self-host (open-source)
+
+The Cordon Cloud server is in this repo at [`cloud_server/`](cloud_server). It is a single FastAPI process with a sqlite event store, a Bearer-auth ingest endpoint, and a polling dashboard. **You can self-host it today** — same Apache-2.0 license as the SDK:
+
+```bash
+# 1. start the server
+CORDON_CLOUD_INGEST_KEYS="cdn_yourtenant:yourproject" \
+CORDON_CLOUD_DASHBOARD_TOKEN="long-random-string" \
+.venv/bin/uvicorn cloud_server.app:app --port 7860
+
+# 2. visit the dashboard
+open "http://127.0.0.1:7860/?t=long-random-string"
+
+# 3. point an agent at it
+CORDON_API_KEY=cdn_yourtenant CORDON_CLOUD_ENDPOINT=http://127.0.0.1:7860 \
+python examples/cloud_reporter.py
+```
+
+Deploy the same image to your own Hugging Face Space with [`cloud_server/space/deploy.sh`](cloud_server/space/deploy.sh) — see [`cloud_server/RUNBOOK.md`](cloud_server/RUNBOOK.md) for the production checklist (rotating the dashboard token, granting and revoking per-VC access, swapping sqlite for Postgres).
+
+### What's hosted only (the paid tier we're building)
+
+Beyond the open-source server, the hosted Cordon Cloud adds:
+
+- **Persistent retention** across rebuilds (Postgres-backed) with configurable retention windows.
+- **Multi-tenant projects + SSO** so a security team can give individual engineers their own scoped keys.
+- **Anomaly alerts** — Slack/PagerDuty webhook when block rate spikes for a project.
+- **Threat-intel feed** — typosquat and exfiltration patterns we discover across the fleet, shipped back to your `Guard` weekly.
+
+If any of that is what you want today, that's the founders@cordon.ai conversation.
 
 ## Deployment
 

@@ -7,56 +7,46 @@ sdk: docker
 app_port: 7860
 pinned: true
 license: apache-2.0
-short_description: Live telemetry for AI agent verdicts.
+short_description: Cordon Cloud (closed beta) — design-partner access.
 ---
 
-# Cordon Cloud — live agent verdict dashboard
+# Cordon Cloud — closed beta
 
 > What did your AI agents *try* to do today, and what stopped them?
 
 This Space is the hosted backend + dashboard for
 [Cordon](https://github.com/Ashok-kumar290/cordon) — the pre-execution
-control layer for AI agents. It receives verdict events from
-`cordon.cloud.CloudReporter` (a two-line addition to any Cordon-protected
-agent) and shows them on a real-time dashboard.
+control layer for AI agents.
+
+**The dashboard at `/` is gated.** Visiting the bare URL returns an
+"Access required" page; design-partner investors and prospects are
+given a magic link of the form `/?t=<token>`. The token is rotated
+out of band. To request access, email **founders@cordon.ai**.
+
+The ingest endpoint (`POST /v1/ingest`) is reachable without the
+dashboard token — customer agents authenticate with their own
+per-tenant Bearer API key. Same Space, two different audiences, two
+different secrets.
 
 ## Endpoints
 
-| Method | Path                | What it does                              |
-| ------ | ------------------- | ----------------------------------------- |
-| GET    | `/`                 | Live dashboard.                           |
-| GET    | `/healthz`          | Liveness probe.                           |
-| POST   | `/v1/ingest`        | Receive a batch of events. `Authorization: Bearer <api_key>` required. |
-| GET    | `/v1/events`        | Paged list of recent events (read-only). |
-| GET    | `/v1/events/{id}`   | Single event with full evidence + probes. |
-| GET    | `/v1/metrics`       | Aggregates over a rolling time window.    |
+| Method | Path                | Auth                                  | Audience               |
+| ------ | ------------------- | ------------------------------------- | ---------------------- |
+| GET    | `/`                 | `?t=<dashboard-token>` (or header)    | Design partners        |
+| GET    | `/v1/events`        | `?t=<dashboard-token>` (or header)    | Design partners        |
+| GET    | `/v1/events/{id}`   | `?t=<dashboard-token>` (or header)    | Design partners        |
+| GET    | `/v1/metrics`       | `?t=<dashboard-token>` (or header)    | Design partners        |
+| POST   | `/v1/ingest`        | `Authorization: Bearer <api-key>`     | Customer agents (SDK)  |
+| GET    | `/healthz`          | none                                  | Uptime monitors        |
 
-## Try it without writing code
+The header form is `X-Cordon-Dashboard-Token: <token>` — prefer it
+for scripted API access so the token isn't logged in URLs.
 
-```bash
-curl -X POST https://seyomi-cordon-cloud.hf.space/v1/ingest \
-     -H 'Authorization: Bearer cdn_demo' \
-     -H 'content-type: application/json' \
-     -d '{
-       "events": [{
-         "ts": '"$(date +%s)"',
-         "action_id": "manual-test-1",
-         "kind": "shell",
-         "command_preview": "rm -rf /etc/passwd",
-         "decision": "block",
-         "blocked": true,
-         "suspicion_score": 0.97,
-         "top_probe": "exfiltration",
-         "top_severity": "critical",
-         "top_evidence": "shell deletes a system file"
-       }]
-     }'
-```
+The dashboard JS reads `?t=` once on page load and forwards it on
+every `/v1/*` call, so once you're in via the magic link, navigation
+just works.
 
-Refresh the dashboard at the top of this page; your event appears with
-an enter animation at the top of the live table.
-
-## SDK usage
+## SDK wiring (after you've been provisioned a key)
 
 ```python
 # pip install cordon-ai
@@ -65,30 +55,31 @@ from cordon.cloud import CloudReporter
 
 guard = Guard.strict()
 guard.add_listener(CloudReporter(
-    api_key="cdn_demo",  # or your tenant key in production
+    api_key="cdn_<your-tenant>",                # provisioned per tenant
     endpoint="https://seyomi-cordon-cloud.hf.space",
 ))
-# every guard.check() now ships a verdict to this dashboard,
-# from a background thread, without blocking your agent.
 ```
 
-## What's the demo data?
+Every `guard.check()` ships a verdict to this dashboard from a
+background thread, without blocking your agent.
+
+## What's in the dashboard right now
 
 On a cold start with an empty database, the server seeds 240
 representative verdicts spread across the last 24 hours so the
-dashboard never shows an empty state. Once real ingest traffic
-arrives under project `default` (or any other configured project),
-that traffic is shown alongside the seeded demo events.
+dashboard never shows an empty state during a sales call. Once real
+ingest traffic arrives under a project name configured in
+`CORDON_CLOUD_INGEST_KEYS`, that traffic appears alongside (or in
+place of) the seeded demo events.
 
-## Limitations of the free Space
+## Caveats this beta deliberately ships with
 
 - **Ephemeral storage.** The sqlite file is reset on every container
-  rebuild. For persistent retention, the same image accepts
-  `CORDON_CLOUD_DB=postgresql://...` (TODO).
-- **Single instance.** Free Spaces run one replica. Rate limit is
-  bounded by uvicorn's defaults.
-- **One auth tenant.** Multi-tenant API keys and SSO ship with the
-  paid tier.
+  rebuild. Persistent retention (`CORDON_CLOUD_DB=postgresql://...`)
+  is a paid-tier upgrade.
+- **One shared dashboard token.** Per-VC tokens + audit logs ship
+  with the paid tier.
+- **No anomaly alerts yet.** Slack/PagerDuty webhooks are next.
 
 ## License
 

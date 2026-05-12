@@ -20,6 +20,13 @@
     low:       "text-neutral-300 border-white/10 bg-white/5",
   };
 
+  // The access token is read once from the URL the operator opened
+  // the dashboard with (``/?t=<token>``) and forwarded on every API
+  // call. We never persist it anywhere — that way revoking access is
+  // just "rotate the env var on the Space"; no client-side state to
+  // chase.
+  const ACCESS_TOKEN = new URLSearchParams(location.search).get("t") || "";
+
   const state = {
     project: "demo",
     window:  86400,
@@ -28,6 +35,18 @@
     lastTopId: 0,
     polling: true,
   };
+
+  /** Build ``/v1/<path>`` with the dashboard access token appended. */
+  function apiUrl(path, params = {}) {
+    const u = new URL(path, location.origin);
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null && v !== "") {
+        u.searchParams.set(k, v);
+      }
+    }
+    if (ACCESS_TOKEN) u.searchParams.set("t", ACCESS_TOKEN);
+    return u.pathname + u.search;
+  }
 
   // ─── Filters ──────────────────────────────────────────────────
   for (const btn of document.querySelectorAll(".flt")) {
@@ -65,13 +84,27 @@
   async function poll() {
     if (!state.polling) return;
     try {
-      const [metrics, events] = await Promise.all([
-        fetch(`/v1/metrics?project=${encodeURIComponent(state.project)}` +
-              `&window_s=${state.window}`).then(r => r.json()),
-        fetch(`/v1/events?project=${encodeURIComponent(state.project)}` +
-              `&limit=100` +
-              (state.decision ? `&decision=${state.decision}` : "")).then(r => r.json()),
+      const [metricsRes, eventsRes] = await Promise.all([
+        fetch(apiUrl("/v1/metrics", {
+          project: state.project,
+          window_s: state.window,
+        })),
+        fetch(apiUrl("/v1/events", {
+          project: state.project,
+          limit: 100,
+          decision: state.decision || undefined,
+        })),
       ]);
+      if (metricsRes.status === 401 || eventsRes.status === 401) {
+        $("live-status").textContent = "access denied";
+        state.polling = false;
+        // The page itself will already have shown the access-required
+        // gate from the server if the user landed here without a token,
+        // but this guards against tokens being rotated mid-session.
+        return;
+      }
+      const metrics = await metricsRes.json();
+      const events  = await eventsRes.json();
       renderMetrics(metrics);
       renderEvents(events.events || []);
       renderSparkline(metrics.sparkline || []);
@@ -213,9 +246,9 @@
     drawer.classList.remove("hidden");
     backdrop.classList.remove("hidden");
     try {
-      const r = await fetch(
-        `/v1/events/${eventId}?project=${encodeURIComponent(state.project)}`
-      );
+      const r = await fetch(apiUrl(`/v1/events/${eventId}`, {
+        project: state.project,
+      }));
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const ev = await r.json();
       body.innerHTML = detailHTML(ev);
