@@ -133,7 +133,13 @@ class Guard:
 
     @staticmethod
     def _semantic_suite() -> list[Probe]:
-        """The full 7-probe Semantic Guard suite (v0.2)."""
+        """The Semantic + Content Guard suite (v0.2.3).
+
+        Seven semantic probes that match on action *shape* plus the
+        content-aware probes that parse file payloads to close the
+        camouflage-attack class (see ``docs/threat-model.md``).
+        """
+        from cordon.probes.content import PythonASTProbe
         from cordon.probes.semantic import (
             DestructiveShellProbe,
             ExfiltrationProbe,
@@ -151,6 +157,7 @@ class Guard:
             TestSuppressionProbe(),
             SecurityWeakeningProbe(),
             DestructiveShellProbe(),
+            PythonASTProbe(),
         ]
 
     @classmethod
