@@ -90,6 +90,15 @@ class EventStore(Protocol):
     def count(self, project: str | None = None) -> int: ...
     def close(self) -> None: ...
 
+    # ── Per-project policy storage (Lane 4) ────────────────────────────────
+    # Stored as the verbatim policy text plus a monotonic version + an
+    # updated_at timestamp. Returns None when no policy has ever been
+    # configured for the project — callers fall back to whichever
+    # default Guard profile they prefer.
+    def get_policy(self, project: str) -> dict[str, Any] | None: ...
+    def put_policy(self, project: str, text: str) -> dict[str, Any]: ...
+    def delete_policy(self, project: str) -> bool: ...
+
 
 class SqliteEventStore:
     """Single-file sqlite backend. The default.
@@ -141,6 +150,13 @@ class SqliteEventStore:
                     ON events (project, blocked, ts DESC);
                 CREATE INDEX IF NOT EXISTS idx_events_probe
                     ON events (project, top_probe, ts DESC);
+
+                CREATE TABLE IF NOT EXISTS policies (
+                    project    TEXT PRIMARY KEY,
+                    text       TEXT NOT NULL,
+                    version    INTEGER NOT NULL DEFAULT 1,
+                    updated_at REAL    NOT NULL
+                );
                 """
             )
 
@@ -325,6 +341,58 @@ class SqliteEventStore:
                 ).fetchone()
         return int(row["n"] or 0)
 
+    # ─── Policy storage ───────────────────────────────────────────────────────
+
+    def get_policy(self, project: str) -> dict[str, Any] | None:
+        """Return ``{text, version, updated_at}`` or ``None`` if unset."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT text, version, updated_at FROM policies WHERE project = ?",
+                (project,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "project":    project,
+            "text":       row["text"],
+            "version":    int(row["version"]),
+            "updated_at": float(row["updated_at"]),
+        }
+
+    def put_policy(self, project: str, text: str) -> dict[str, Any]:
+        """Upsert the policy for ``project``; auto-increments ``version``."""
+        now = time.time()
+        with self._lock:
+            self._conn.execute(
+                """
+                INSERT INTO policies (project, text, version, updated_at)
+                VALUES (?, ?, 1, ?)
+                ON CONFLICT(project) DO UPDATE SET
+                    text       = excluded.text,
+                    version    = policies.version + 1,
+                    updated_at = excluded.updated_at
+                """,
+                (project, text, now),
+            )
+            row = self._conn.execute(
+                "SELECT version, updated_at FROM policies WHERE project = ?",
+                (project,),
+            ).fetchone()
+        return {
+            "project":    project,
+            "text":       text,
+            "version":    int(row["version"]),
+            "updated_at": float(row["updated_at"]),
+        }
+
+    def delete_policy(self, project: str) -> bool:
+        """Delete the policy for ``project``. Returns True if a row was removed."""
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM policies WHERE project = ?", (project,),
+            )
+        return cur.rowcount > 0
+
     def close(self) -> None:
         with self._lock:
             self._conn.close()
@@ -488,6 +556,13 @@ class PostgresEventStore:
         ON events (project, blocked, ts DESC);
     CREATE INDEX IF NOT EXISTS idx_events_probe
         ON events (project, top_probe, ts DESC);
+
+    CREATE TABLE IF NOT EXISTS policies (
+        project    TEXT PRIMARY KEY,
+        text       TEXT NOT NULL,
+        version    INTEGER NOT NULL DEFAULT 1,
+        updated_at DOUBLE PRECISION NOT NULL
+    );
     """
 
     def _ensure_schema(self) -> None:
@@ -649,6 +724,53 @@ class PostgresEventStore:
                 )
             row = cur.fetchone() or {}
         return int(row.get("n") or 0)
+
+    # ─── Policy storage ───────────────────────────────────────────────────
+
+    def get_policy(self, project: str) -> dict[str, Any] | None:
+        with self._pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT text, version, updated_at FROM policies WHERE project = %s",
+                (project,),
+            )
+            row = cur.fetchone()
+        if row is None:
+            return None
+        return {
+            "project":    project,
+            "text":       row["text"],
+            "version":    int(row["version"]),
+            "updated_at": float(row["updated_at"]),
+        }
+
+    def put_policy(self, project: str, text: str) -> dict[str, Any]:
+        now = time.time()
+        with self._pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO policies (project, text, version, updated_at)
+                VALUES (%s, %s, 1, %s)
+                ON CONFLICT (project) DO UPDATE SET
+                    text       = EXCLUDED.text,
+                    version    = policies.version + 1,
+                    updated_at = EXCLUDED.updated_at
+                RETURNING version, updated_at
+                """,
+                (project, text, now),
+            )
+            row = cur.fetchone() or {}
+        return {
+            "project":    project,
+            "text":       text,
+            "version":    int(row.get("version") or 1),
+            "updated_at": float(row.get("updated_at") or now),
+        }
+
+    def delete_policy(self, project: str) -> bool:
+        with self._pool.connection() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM policies WHERE project = %s", (project,))
+            n = cur.rowcount
+        return n > 0
 
     def close(self) -> None:
         self._pool.close()

@@ -249,3 +249,68 @@ def test_make_store_postgres_url():
 def test_make_store_rejects_unsupported_scheme():
     with pytest.raises(ValueError, match="Unsupported"):
         make_store("mysql://root@localhost/db")
+
+
+# ─── Policy storage (Lane 4) ────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("backend_fixture", BACKENDS)
+def test_policy_get_unset_returns_none(request, backend_fixture):
+    """An unset project must return None (not raise, not empty-string)."""
+    store: EventStore = request.getfixturevalue(backend_fixture)
+    assert store.get_policy("demo") is None
+
+
+@pytest.mark.parametrize("backend_fixture", BACKENDS)
+def test_policy_put_then_get_round_trip(request, backend_fixture):
+    """Round-trip: PUT a policy, GET it back verbatim."""
+    store: EventStore = request.getfixturevalue(backend_fixture)
+    text = "profile: strict\nallow when command_starts_with: \"rm -rf node_modules\"\n"
+    out = store.put_policy("demo", text)
+    assert out["project"] == "demo"
+    assert out["text"] == text
+    assert out["version"] == 1
+    assert out["updated_at"] > 0
+
+    got = store.get_policy("demo")
+    assert got is not None
+    assert got["text"] == text
+    assert got["version"] == 1
+
+
+@pytest.mark.parametrize("backend_fixture", BACKENDS)
+def test_policy_put_bumps_version_on_subsequent_writes(request, backend_fixture):
+    store: EventStore = request.getfixturevalue(backend_fixture)
+    v1 = store.put_policy("demo", "profile: strict")
+    v2 = store.put_policy("demo", "profile: default")
+    v3 = store.put_policy("demo", "profile: permissive")
+    assert (v1["version"], v2["version"], v3["version"]) == (1, 2, 3)
+    # And the latest GET reflects only the latest text.
+    assert store.get_policy("demo")["text"] == "profile: permissive"
+
+
+@pytest.mark.parametrize("backend_fixture", BACKENDS)
+def test_policy_isolation_per_project(request, backend_fixture):
+    """Two projects must have independent policy slots."""
+    store: EventStore = request.getfixturevalue(backend_fixture)
+    store.put_policy("alpha", "profile: strict")
+    store.put_policy("beta",  "profile: default")
+
+    a = store.get_policy("alpha")
+    b = store.get_policy("beta")
+    assert a["text"] == "profile: strict"
+    assert b["text"] == "profile: default"
+    # Bumping one must not bump the other.
+    store.put_policy("alpha", "profile: permissive")
+    assert store.get_policy("alpha")["version"] == 2
+    assert store.get_policy("beta")["version"] == 1
+
+
+@pytest.mark.parametrize("backend_fixture", BACKENDS)
+def test_policy_delete(request, backend_fixture):
+    store: EventStore = request.getfixturevalue(backend_fixture)
+    store.put_policy("demo", "profile: strict")
+    assert store.delete_policy("demo") is True
+    assert store.get_policy("demo") is None
+    # Deleting again is a no-op, not an error.
+    assert store.delete_policy("demo") is False

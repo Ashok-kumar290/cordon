@@ -405,11 +405,19 @@ class TryRequest(BaseModel):
 
     Kept deliberately small so the surface stays clearly demo-only;
     the real SDK exposes the full :class:`cordon.Action` shape.
+
+    Lane 4: optional ``policy`` field lets the dashboard policy editor
+    test a proposed policy against an action *before* the operator
+    hits Save. When ``policy`` is non-empty it overrides ``profile``.
     """
     kind: str = Field(default="shell", description="'shell' or 'write_file'")
     command: str | None = Field(default=None, max_length=4096)
     changes: dict[str, str] | None = Field(default=None)
     profile: str = Field(default="strict", description="'strict' | 'default' | 'permissive'")
+    policy: str | None = Field(
+        default=None, max_length=64 * 1024,
+        description="Optional inline policy DSL; overrides `profile` when set.",
+    )
 
 
 _TRY_RL_WINDOW_S = 60.0
@@ -467,13 +475,32 @@ def try_probe(payload: TryRequest, request: Request) -> dict[str, Any]:
             detail=f"cordon SDK not installed in this Space: {exc}",
         ) from exc
 
-    profile = (payload.profile or "strict").lower()
-    if profile == "strict":
-        guard = Guard.strict()
-    elif profile == "permissive":
-        guard = Guard.permissive()
+    # Two paths: inline policy text (overrides everything) or a bare
+    # profile name. The inline-policy path is what the dashboard
+    # editor calls when previewing a draft.
+    if payload.policy and payload.policy.strip():
+        try:
+            guard = Guard.from_policy(payload.policy)
+        except Exception as exc:  # noqa: BLE001 — surface to the UI
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": str(exc),
+                    "line":    getattr(exc, "line", 0),
+                    "snippet": getattr(exc, "snippet", ""),
+                },
+            ) from exc
+        # Surface to the response payload so callers can confirm the
+        # try-call did exercise the policy path, not a default profile.
+        profile = guard.name
     else:
-        guard = Guard.default()
+        profile = (payload.profile or "strict").lower()
+        if profile == "strict":
+            guard = Guard.strict()
+        elif profile == "permissive":
+            guard = Guard.permissive()
+        else:
+            guard = Guard.default()
 
     # Map the request to an Action. Bound by Pydantic's max_length so
     # we don't accept arbitrarily large payloads on a public endpoint.
@@ -505,6 +532,98 @@ def try_probe(payload: TryRequest, request: Request) -> dict[str, Any]:
             for p in triggered
         ],
         "n_probes_total": len(verdict.all_probes),
+    }
+
+
+# ─── Per-project policy endpoints (Lane 4) ────────────────────────────────────
+
+
+class PutPolicyRequest(BaseModel):
+    """Body for ``PUT /v1/policies/{project}``."""
+    text: str = Field(..., min_length=0, max_length=64 * 1024)
+
+
+class ValidatePolicyRequest(BaseModel):
+    """Body for ``POST /v1/policies/validate``."""
+    text: str = Field(..., max_length=64 * 1024)
+
+
+@app.get("/v1/policies/{project}")
+def get_policy(project: str, request: Request) -> dict[str, Any]:
+    """Return the current policy for a project, or 404 if none set.
+
+    Read surface — gated by the dashboard token, same as ``/v1/events``.
+    """
+    _require_dashboard_access(request)
+    row = STORE.get_policy(project)
+    if row is None:
+        raise HTTPException(status_code=404, detail="no policy configured for project")
+    return row
+
+
+@app.put("/v1/policies/{project}")
+def put_policy(
+    project: str,
+    payload: PutPolicyRequest,
+    request: Request,
+) -> dict[str, Any]:
+    """Upsert the policy for a project. Validates the DSL before storing.
+
+    Write surface — gated by the dashboard token, intentionally NOT by
+    the ingest key (writing policies is a *control-plane* action, not
+    a data-plane action, so it shouldn't share credentials with the
+    agent SDK).
+    """
+    _require_dashboard_access(request)
+
+    # Validate before storing — never persist a policy that won't load.
+    try:
+        from cordon.policy import parse as parse_policy
+        parse_policy(payload.text)
+    except Exception as exc:  # noqa: BLE001 — surface line+snippet to the editor
+        line = getattr(exc, "line", 0)
+        snippet = getattr(exc, "snippet", "")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": str(exc),
+                "line":    line,
+                "snippet": snippet,
+            },
+        ) from exc
+
+    return STORE.put_policy(project, payload.text)
+
+
+@app.delete("/v1/policies/{project}")
+def delete_policy(project: str, request: Request) -> dict[str, Any]:
+    _require_dashboard_access(request)
+    removed = STORE.delete_policy(project)
+    return {"project": project, "removed": removed}
+
+
+@app.post("/v1/policies/validate")
+def validate_policy(payload: ValidatePolicyRequest) -> dict[str, Any]:
+    """Parse the supplied text and report errors. Public, rate-limited.
+
+    Drives the live syntax-check in the dashboard editor — we don't
+    want every keystroke to hit ``PUT`` and clobber the saved version.
+    No persistence; the storage layer never sees this text.
+    """
+    try:
+        from cordon.policy import parse as parse_policy
+        policy = parse_policy(payload.text)
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok":      False,
+            "message": str(exc),
+            "line":    getattr(exc, "line", 0),
+            "snippet": getattr(exc, "snippet", ""),
+        }
+    return {
+        "ok":        True,
+        "profile":   policy.profile,
+        "n_rules":   len(policy.rules),
     }
 
 
