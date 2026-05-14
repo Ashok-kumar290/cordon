@@ -378,6 +378,8 @@ Cordon is the production-grade descendant of two research projects:
 
 Cordon Cloud is the hosted half: every verdict your agent produces, in real time, on a searchable dashboard. **It is intentionally not advertised here.** The dashboard runs in a private beta with a small group of design partners; the URL is shared per-tenant with a magic access token. To request access, email **founders@cordon.ai** with one line about the agents you operate.
 
+For the full design-partner offer, see [`docs/design-partner-program.md`](docs/design-partner-program.md). Three slots are open this cohort. The data-handling commitments are spelled out in [`docs/data-policy.md`](docs/data-policy.md) — including the documented export (`GET /v1/events/export`) and delete (`DELETE /v1/events`) endpoints your security team will want to curl-test.
+
 ### Two-line client SDK
 
 The SDK that ships with `cordon-ai` is public — the gating only applies to the hosted dashboard:

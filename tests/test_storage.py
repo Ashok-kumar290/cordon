@@ -314,3 +314,63 @@ def test_policy_delete(request, backend_fixture):
     assert store.get_policy("demo") is None
     # Deleting again is a no-op, not an error.
     assert store.delete_policy("demo") is False
+
+
+# ─── Data-subject endpoints (data-policy.md §5) ─────────────────────────────
+
+
+@pytest.mark.parametrize("backend_fixture", BACKENDS)
+def test_delete_events_empty_project_returns_zero(request, backend_fixture):
+    """``delete_events`` on a project with no rows is idempotent and returns 0."""
+    store: EventStore = request.getfixturevalue(backend_fixture)
+    assert store.delete_events("nonexistent") == 0
+
+
+@pytest.mark.parametrize("backend_fixture", BACKENDS)
+def test_delete_events_returns_rowcount(request, backend_fixture):
+    """``delete_events`` returns the number of rows actually deleted."""
+    store: EventStore = request.getfixturevalue(backend_fixture)
+    events = [
+        {"ts": 1.0, "action_id": "a-1", "kind": "shell", "command_preview": "x",
+         "decision": "allow", "blocked": False, "suspicion_score": 0.0,
+         "raw_json": "{}"},
+        {"ts": 2.0, "action_id": "a-2", "kind": "shell", "command_preview": "y",
+         "decision": "block", "blocked": True, "suspicion_score": 0.95,
+         "raw_json": "{}"},
+        {"ts": 3.0, "action_id": "a-3", "kind": "shell", "command_preview": "z",
+         "decision": "flag", "blocked": False, "suspicion_score": 0.5,
+         "raw_json": "{}"},
+    ]
+    store.insert_batch("alpha", events)
+    assert store.count("alpha") == 3
+    n = store.delete_events("alpha")
+    assert n == 3
+    assert store.count("alpha") == 0
+
+
+@pytest.mark.parametrize("backend_fixture", BACKENDS)
+def test_delete_events_is_project_scoped(request, backend_fixture):
+    """Deleting one project must not touch another project's rows."""
+    store: EventStore = request.getfixturevalue(backend_fixture)
+    template = {"ts": 1.0, "action_id": "a", "kind": "shell", "command_preview": "x",
+                "decision": "allow", "blocked": False, "suspicion_score": 0.0,
+                "raw_json": "{}"}
+    store.insert_batch("alpha", [template])
+    store.insert_batch("beta", [template, template])
+
+    deleted = store.delete_events("alpha")
+    assert deleted == 1
+    assert store.count("alpha") == 0
+    assert store.count("beta") == 2   # untouched
+
+
+@pytest.mark.parametrize("backend_fixture", BACKENDS)
+def test_delete_events_idempotent(request, backend_fixture):
+    """Running delete twice in a row returns the count, then zero."""
+    store: EventStore = request.getfixturevalue(backend_fixture)
+    template = {"ts": 1.0, "action_id": "a", "kind": "shell", "command_preview": "x",
+                "decision": "allow", "blocked": False, "suspicion_score": 0.0,
+                "raw_json": "{}"}
+    store.insert_batch("demo", [template, template])
+    assert store.delete_events("demo") == 2
+    assert store.delete_events("demo") == 0

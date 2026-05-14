@@ -90,6 +90,12 @@ class EventStore(Protocol):
     def count(self, project: str | None = None) -> int: ...
     def close(self) -> None: ...
 
+    # ── Data-subject endpoints (data-policy.md §5) ─────────────────────────
+    # Required for the export / delete REST endpoints that the data
+    # policy promises. Implementations must return the number of rows
+    # actually deleted (so the response can report "deleted: 12483").
+    def delete_events(self, project: str) -> int: ...
+
     # ── Per-project policy storage (Lane 4) ────────────────────────────────
     # Stored as the verbatim policy text plus a monotonic version + an
     # updated_at timestamp. Returns None when no policy has ever been
@@ -340,6 +346,19 @@ class SqliteEventStore:
                     (project,),
                 ).fetchone()
         return int(row["n"] or 0)
+
+    def delete_events(self, project: str) -> int:
+        """Delete every event for ``project``. Returns the row count.
+
+        Required by the public data-policy commitment (§5). Idempotent —
+        re-running with the same project after a successful delete
+        returns 0.
+        """
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM events WHERE project = ?", (project,),
+            )
+        return cur.rowcount
 
     # ─── Policy storage ───────────────────────────────────────────────────────
 
@@ -724,6 +743,14 @@ class PostgresEventStore:
                 )
             row = cur.fetchone() or {}
         return int(row.get("n") or 0)
+
+    def delete_events(self, project: str) -> int:
+        with self._pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM events WHERE project = %s", (project,),
+            )
+            n = cur.rowcount
+        return int(n or 0)
 
     # ─── Policy storage ───────────────────────────────────────────────────
 

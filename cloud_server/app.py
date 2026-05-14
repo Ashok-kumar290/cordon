@@ -38,6 +38,8 @@ Space. The seeded events are tagged with project ``"demo"``.
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import os
 import random
@@ -48,7 +50,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Header, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -647,6 +649,58 @@ def list_events(
     return {"events": rows, "n": len(rows)}
 
 
+# NOTE: ``/v1/events/export`` must be declared BEFORE ``/v1/events/{event_id}``
+# so the parametrised route doesn't shadow the literal one. FastAPI
+# dispatches in declaration order; without this ordering, GET on
+# ``/v1/events/export`` would try to parse ``"export"`` as an integer
+# event_id and return 422.
+
+
+@app.get("/v1/events/export")
+def export_events(
+    request: Request,
+    project: str = Query("demo"),
+    format: str = Query("jsonl", pattern="^(jsonl|csv)$"),
+) -> Any:
+    """Stream every event for ``project`` as JSONL (default) or CSV.
+
+    Dashboard-token gated. No pagination — this endpoint is for
+    one-shot exports during security reviews or contract termination,
+    not for routine streaming. For routine streaming, page through
+    ``GET /v1/events``.
+
+    The export contains the same columns documented in
+    ``docs/data-policy.md`` §1, with no further truncation beyond
+    what was applied at ingest time.
+    """
+    _require_dashboard_access(request)
+
+    # Pull everything in one shot. The store's list_events has no
+    # upper cap on ``limit``; setting it to a very large int returns
+    # all rows for the project.
+    rows = STORE.list_events(project, limit=10_000_000)
+
+    if format == "csv":
+        return Response(
+            content=_rows_to_csv(rows),
+            media_type="text/csv",
+            headers={
+                "content-disposition": f'attachment; filename="{project}-events.csv"',
+            },
+        )
+
+    # JSONL — one JSON object per line. Easier to stream into jq /
+    # log pipelines than a single huge array.
+    body = "\n".join(json.dumps(r, default=str) for r in rows)
+    return Response(
+        content=body,
+        media_type="application/x-ndjson",
+        headers={
+            "content-disposition": f'attachment; filename="{project}-events.jsonl"',
+        },
+    )
+
+
 @app.get("/v1/events/{event_id}")
 def get_event(
     event_id: int,
@@ -668,6 +722,66 @@ def get_metrics(
 ) -> dict[str, Any]:
     _require_dashboard_access(request)
     return STORE.metrics(project, window_s=window_s)
+
+
+# ─── Data-subject endpoints (docs/data-policy.md §5) ──────────────────────────
+#
+# A design-partner security review will ask: "how do I export my data,
+# and how do I delete it?" The documented answer lives in the data
+# policy; the export endpoint lives above (declared early to outrank
+# /v1/events/{event_id}), the delete endpoint follows.
+
+
+@app.delete("/v1/events")
+def delete_events(
+    request: Request,
+    project: str = Query("demo"),
+) -> dict[str, Any]:
+    """Delete every event for ``project``. Idempotent.
+
+    Dashboard-token gated. Returns the number of rows actually
+    deleted (zero on the second call after a successful delete).
+    There is no soft-delete or recovery period — once this returns,
+    the rows are gone.
+    """
+    _require_dashboard_access(request)
+    n = STORE.delete_events(project)
+    return {"project": project, "deleted": int(n)}
+
+
+def _rows_to_csv(rows: list[dict[str, Any]]) -> str:
+    """Serialise events to CSV with a stable column order.
+
+    We can't rely on the row dicts having identical keys (older
+    events written under earlier schemas may be missing fields)
+    so we union the keys across all rows before writing the header.
+    """
+    if not rows:
+        return ""
+    # Stable column order: known schema first, then any extras.
+    primary = [
+        "id", "ts", "project", "action_id", "kind", "command_preview",
+        "decision", "blocked", "suspicion_score",
+        "top_probe", "top_severity", "top_evidence",
+        "guard_profile", "sdk_version", "raw_json", "created_at",
+    ]
+    seen = set(primary)
+    extras: list[str] = []
+    for r in rows:
+        for k in r:
+            if k not in seen:
+                extras.append(k)
+                seen.add(k)
+    columns = primary + extras
+
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=columns, extrasaction="ignore")
+    writer.writeheader()
+    for r in rows:
+        # Coerce non-serialisable values to strings so DictWriter
+        # never raises on a row mid-export.
+        writer.writerow({k: ("" if r.get(k) is None else r[k]) for k in columns})
+    return buf.getvalue()
 
 
 # ─── Demo seed ─────────────────────────────────────────────────────────────────
